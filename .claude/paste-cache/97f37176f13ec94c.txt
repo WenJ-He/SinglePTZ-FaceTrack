@@ -1,0 +1,110 @@
+你现在是一个严谨的工程开发 Agent，需要基于已有项目自动完成开发任务。
+【项目基础信息】
+- 项目路径：当前目录
+- Git 仓库：git@github.com:WenJ-He/SinglePTZ-FaceTrack.git
+- 需求文档：doc/ 目录（包含需求说明 + 详细设计）
+- 任务清单：doc/dev_tasks.json
+# 🎯 总目标
+你需要严格按照 `doc/dev_tasks.json` 中的任务顺序，逐个完成开发任务，并保证：
+1. 每个任务 独立完成、独立测试、独立提交
+2. 每完成一个任务：
+   - 更新 json 中该任务的 `status`
+   - 编写任务报告
+   - 提交 git
+# 📌 执行流程（必须严格遵守）
+
+🧪 开发环境要求（必须优先执行）
+
+在开始任何任务前，必须先完成环境准备：
+
+1️⃣ 创建独立 Conda 环境
+
+环境名称：
+single_ptz_facetrack
+执行：
+conda create -n single_ptz_facetrack python=3.10 -y
+conda activate single_ptz_facetrack
+2️⃣ 安装基础依赖（按需）
+根据项目需要自动判断安装：
+示例（按需安装）：
+pip install -U pip setuptools wheel
+pip install opencv-python numpy
+如果项目中已有：
+-  requirements.txt → 使用： 
+pip install -r requirements.txt
+
+---
+3️⃣ 环境记录（必须）
+在项目根目录生成：
+requirements.txt
+（如果不存在则创建）
+
+---
+4️⃣ 后续所有开发必须在该环境中执行
+❗ 禁止使用 base 环境
+ ❗ 禁止污染系统环境
+
+---
+5️⃣ 如果遇到以下情况必须停止并询问我：
+-  需要 sudo 权限 
+-  conda 不存在 
+-  pip 安装失败
+然后开始
+对每一个任务，执行以下步骤：
+## 1️⃣ 解析任务
+- 从 `doc/dev_tasks.json` 读取当前未完成任务
+- 理解任务目标 + 对应需求文档（doc/）
+## 2️⃣ 代码实现
+要求：
+- 仅实现当前任务所需功能
+- ❌ 禁止：
+  - 添加无关功能
+  - 提前实现后续任务
+  - 过度设计
+- 保持代码：
+  - 简洁
+  - 可运行
+  - 可测试
+## 3️⃣ 本地测试（必须执行）
+你必须：
+- 编写最小测试代码（可放在 test/ 或当前模块中）
+- 实际运行代码验证：
+  - 功能正确
+  - 无明显错误
+- 如果涉及：
+  - 模型 → mock / 简化调用
+  - PTZ → 可用日志模拟
+## 4️⃣ 更新任务状态（关键）
+修改：
+doc/dev_tasks.json
+将当前任务：
+"status": "pending"
+改为：
+"status": "done"
+## 5️⃣ 编写任务报告（必须）
+在目录：
+doc/tasks/
+新建文件：
+<task_id>.md
+内容必须包含：
+### 🧾 任务完成报告
+#### 1. 任务信息
+- 任务ID：
+- 任务名称：
+#### 2. 本次实现内容
+- 做了哪些代码实现
+- 修改了哪些文件
+#### 3. 测试情况
+- 测试方式：
+- 测试结果：
+#### 4. 问题与解决
+- 遇到的问题：
+- 解决方案：
+#### 5. 当前状态
+- 是否完成：✅ / ❌
+## 6️⃣ Git 提交（必须执行）
+每个任务完成后：
+```bash
+git add .
+git commit -m "feat: 完成任务 <task_id> - <任务名称>"
+git push origin main

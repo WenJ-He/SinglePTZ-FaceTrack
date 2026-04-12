@@ -1,0 +1,20 @@
+---
+name: System architecture decisions
+description: Key architectural choices for SinglePTZ-FaceTrack - 3 preset patrol, Python, RTSP+ctypes, state machine
+type: project
+---
+
+Decided architecture (v0.2, 2026-04-12):
+- Language: Python, SDK via ctypes, models via onnxruntime-gpu
+- Video: RTSP + OpenCV (not SDK preview callback)
+- 3 preset positions covering full space, software-controlled patrol (not SDK cruise)
+- State machine: PATROL (idle cycling) ↔ SCAN (per-preset face detection + zoom + recognize)
+- ReID: OSNet_x0_25 for cross-preset de-duplication
+- Person detection: YOLOv8n COCO (allowed by user)
+- Face detection: YOLO11n-face (640 for close, 1280 for wide) — NMS not built-in, must post-process
+- Face recognition: ArcFace 112×112 → 512-d, no landmark alignment for now
+- Recording: on-demand via NET_DVR_StartDVRRecord, keyboard toggle 'v'
+
+**Why:** Python chosen for demo speed; RTSP chosen for simplicity over SDK callbacks; 3 presets because 2x zoom is too limited for single-position coverage.
+
+**How to apply:** Implementation follows 8 milestones (M1-M8) defined in 详细设计书.md §10.

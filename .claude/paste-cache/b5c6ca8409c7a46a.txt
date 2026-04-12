@@ -1,0 +1,26 @@
+(base) ➜  tlm_workspace sudo ctr -n k8s.io images tag kubeedge/cloudcore:v1.17.5 docker.io/kubeedge/cloudcore:v1.17.5
+  sudo ctr -n k8s.io images tag kubeedge/iptables-manager:v1.17.5 docker.io/kubeedge/iptables-manager:v1.17.5
+  kubectl delete pod -n kubeedge --all --force --grace-period=0
+WARN[0000] DEPRECATION: The `mirrors` property of `[plugins."io.containerd.grpc.v1.cri".registry]` is deprecated since containerd v1.5 and will be removed in containerd v2.1. Use `config_path` instead.
+WARN[0000] DEPRECATION: The `configs` property of `[plugins."io.containerd.grpc.v1.cri".registry]` is deprecated since containerd v1.5 and will be removed in containerd v2.1. Use `config_path` instead.
+WARN[0000] DEPRECATION: The `io.containerd.runc.v1` runtime is deprecated since containerd v1.4 and removed in containerd v2.0. Use the `io.containerd.runc.v2` runtime instead.
+docker.io/kubeedge/cloudcore:v1.17.5
+WARN[0000] DEPRECATION: The `mirrors` property of `[plugins."io.containerd.grpc.v1.cri".registry]` is deprecated since containerd v1.5 and will be removed in containerd v2.1. Use `config_path` instead.
+WARN[0000] DEPRECATION: The `configs` property of `[plugins."io.containerd.grpc.v1.cri".registry]` is deprecated since containerd v1.5 and will be removed in containerd v2.1. Use `config_path` instead.
+WARN[0000] DEPRECATION: The `io.containerd.runc.v1` runtime is deprecated since containerd v1.4 and removed in containerd v2.0. Use the `io.containerd.runc.v2` runtime instead.
+docker.io/kubeedge/iptables-manager:v1.17.5
+Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+pod "cloud-iptables-manager-pvwlf" force deleted
+pod "cloudcore-857d998c64-4ffdb" force deleted
+(base) ➜  tlm_workspace kubectl get pods -A 2>&1
+NAMESPACE      NAME                                              READY   STATUS    RESTARTS   AGE
+kube-flannel   kube-flannel-ds-zbfwr                             1/1     Running   0          75m
+kube-system    coredns-5f98f8d567-4gnpd                          1/1     Running   0          124m
+kube-system    coredns-5f98f8d567-8sqcg                          1/1     Running   0          124m
+kube-system    etcd-zhouhaojie-super-server                      1/1     Running   0          124m
+kube-system    kube-apiserver-zhouhaojie-super-server            1/1     Running   0          124m
+kube-system    kube-controller-manager-zhouhaojie-super-server   1/1     Running   0          124m
+kube-system    kube-proxy-7jfsm                                  1/1     Running   0          124m
+kube-system    kube-scheduler-zhouhaojie-super-server            1/1     Running   0          124m
+kubeedge       cloud-iptables-manager-bf6wz                      1/1     Running   0          5s
+kubeedge       cloudcore-857d998c64-47qck                        1/1     Running   0          5s

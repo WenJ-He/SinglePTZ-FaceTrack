@@ -1,0 +1,2 @@
+- [Camera specs](project_camera.md) — iDS-2DE2402IX-D3/W/XM, 4MP, 2x zoom, 3-preset patrol design constraint
+- [Architecture decisions](project_architecture.md) — Python/ctypes/RTSP, 3-preset state machine, 8 milestones

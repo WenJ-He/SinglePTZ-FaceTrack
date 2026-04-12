@@ -1,0 +1,451 @@
+{
+  "project": "SinglePTZ-FaceTrack",
+  "version": "v1.0",
+  "created": "2026-04-12",
+  "description": "基于需求说明书v1.0与详细设计书v1.0拆解的开发任务清单，共8个里程碑、44个子任务",
+
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "SDK 打通",
+      "description": "海康SDK ctypes绑定 + PTZ业务封装 + 冒烟测试，验证设备连通性和PTZ基本控制能力",
+      "status": "pending",
+      "acceptance": "能 login / 读能力集 / goto_preset(1,2,3,4) / zoom_to_bbox / 录像启停",
+      "tasks": [
+        {
+          "id": "M1-T1",
+          "name": "工程骨架搭建",
+          "description": "按设计书§3创建完整目录结构（src/, config/, cache/, output/, logs/, scripts/），创建所有 __init__.py，创建 config/config.yaml 模板（含所有参数的默认值）",
+          "file": ["src/__init__.py", "config/config.yaml"],
+          "status": "pending",
+          "depends": []
+        },
+        {
+          "id": "M1-T2",
+          "name": "配置加载模块",
+          "description": "实现 src/config.py：YAML → dataclass 映射，含 HikConfig / PatrolConfig / ModelConfig / DetectConfig / TrackConfig / PtzConfig / CaptureConfig / RecognizeConfig / ReidConfig / OutputConfig / LogConfig 全部子结构",
+          "file": ["src/config.py"],
+          "status": "pending",
+          "depends": ["M1-T1"]
+        },
+        {
+          "id": "M1-T3",
+          "name": "日志模块",
+          "description": "实现 src/utils/logger.py：基于 Python logging，按天切分文件（TimedRotatingFileHandler），控制台 + 文件双输出，级别可配",
+          "file": ["src/utils/logger.py"],
+          "status": "pending",
+          "depends": ["M1-T2"]
+        },
+        {
+          "id": "M1-T4",
+          "name": "海康SDK ctypes绑定",
+          "description": "实现 src/sdk/hik_sdk.py：加载 libhcnetsdk.so（处理 LD_LIBRARY_PATH），声明结构体 NET_DVR_USER_LOGIN_INFO / NET_DVR_DEVICEINFO_V40 / NET_DVR_POINT_FRAME，声明函数签名 Init/Cleanup/Login_V40/Logout/PTZSelZoomIn_EX/PTZPreset_Other/PTZControl_Other/PTZControlWithSpeed_Other/StartDVRRecord/StopDVRRecord/GetDeviceAbility/GetLastError",
+          "file": ["src/sdk/hik_sdk.py"],
+          "status": "pending",
+          "depends": ["M1-T1"]
+        },
+        {
+          "id": "M1-T5",
+          "name": "PTZ业务封装",
+          "description": "实现 src/sdk/hik_ptz.py：HikPTZ 类，封装 login/logout/check_3d_positioning(XML解析<PTZZoomIn>)/goto_preset/zoom_to_bbox(含外扩+归一化0~255)/start_record/stop_record，所有SDK调用失败时打印 GetLastError 错误码",
+          "file": ["src/sdk/hik_ptz.py"],
+          "status": "pending",
+          "depends": ["M1-T4"]
+        },
+        {
+          "id": "M1-T6",
+          "name": "geometry工具函数",
+          "description": "实现 src/utils/geometry.py：bbox_expand(bbox, ratio, frame_w, frame_h) 外扩并clip到边界，bbox_to_point_frame(bbox, frame_w, frame_h) 转归一化0~255坐标，bbox_center/bbox_area 等辅助函数",
+          "file": ["src/utils/geometry.py"],
+          "status": "pending",
+          "depends": ["M1-T1"]
+        },
+        {
+          "id": "M1-T7",
+          "name": "SDK冒烟测试脚本",
+          "description": "编写 scripts/test_sdk.py：登录设备 → 打印能力集 → 依次 goto_preset(1,2,3,4) 各等2秒 → 对画面中心发一次 zoom_to_bbox → 启停录像 → 登出。验证所有SDK接口可用",
+          "file": ["scripts/test_sdk.py"],
+          "status": "pending",
+          "depends": ["M1-T5", "M1-T6"]
+        }
+      ]
+    },
+
+    {
+      "id": "M2",
+      "name": "取流 + 检测",
+      "description": "RTSP取流 + YOLO11n人脸检测 + YOLOv8n人体检测，OpenCV窗口实时画框验证",
+      "status": "pending",
+      "acceptance": "OpenCV 窗口里看到 1280 模型稳定框出全景所有脸 + 人体框",
+      "tasks": [
+        {
+          "id": "M2-T1",
+          "name": "RTSP取流模块",
+          "description": "实现 src/video/rtsp_source.py：RtspSource 类，后台线程 grab+retrieve 最新帧缓存（丢老帧保新帧），支持断流自动重连（间隔2s，最多12次），read() 返回最新帧或 None，线程安全锁",
+          "file": ["src/video/rtsp_source.py"],
+          "status": "pending",
+          "depends": ["M1-T2"]
+        },
+        {
+          "id": "M2-T2",
+          "name": "ORT provider自动选择",
+          "description": "在 src/config.py 或 src/utils/ 中实现 auto_providers() 函数：检测 CUDAExecutionProvider 是否可用，可用则返回 ['CUDAExecutionProvider','CPUExecutionProvider']，否则 fallback CPU 并打 INFO 日志",
+          "file": ["src/config.py"],
+          "status": "pending",
+          "depends": ["M1-T3"]
+        },
+        {
+          "id": "M2-T3",
+          "name": "YOLO人脸检测模块",
+          "description": "实现 src/detect/yolo_face.py：YoloFace 类，支持 640/1280 两种输入。实现 letterbox 保持长宽比缩放、推理、转置(N,5)→置信度过滤→cxcywh→xyxy→NMS(cv2.dnn.NMSBoxes)→反letterbox映射回原图坐标。返回 List[Detection]",
+          "file": ["src/detect/yolo_face.py"],
+          "status": "pending",
+          "depends": ["M2-T2"]
+        },
+        {
+          "id": "M2-T4",
+          "name": "YOLO人体检测模块",
+          "description": "实现 src/detect/yolo_person.py：YoloPerson 类，复用 YoloFace 同款后处理逻辑，但 cls 过滤只保留 class_id==0(person)。需要先下载 YOLOv8n COCO ONNX 权重到 models/person/",
+          "file": ["src/detect/yolo_person.py"],
+          "status": "pending",
+          "depends": ["M2-T3"]
+        },
+        {
+          "id": "M2-T5",
+          "name": "检测可视化验证脚本",
+          "description": "编写 scripts/test_detect.py：取RTSP流 → 1280人脸检测 + 人体检测 → OpenCV窗口实时画人脸框(绿)+人体框(蓝)+置信度+FPS → 按q退出。验证检测模型在4MP画面上的效果和帧率",
+          "file": ["scripts/test_detect.py"],
+          "status": "pending",
+          "depends": ["M2-T1", "M2-T3", "M2-T4"]
+        }
+      ]
+    },
+
+    {
+      "id": "M3",
+      "name": "识别 + 人脸库",
+      "description": "ArcFace嵌入 + 人脸库构建/缓存/匹配 + 库健康度自测",
+      "status": "pending",
+      "acceptance": "对 photo/ 自测：正对正余弦 ≥0.6，跨身份 <0.2；库缓存命中后加载 ≤1秒",
+      "tasks": [
+        {
+          "id": "M3-T1",
+          "name": "ArcFace嵌入模块",
+          "description": "实现 src/recognize/arcface.py：ArcFace 类，embed(face_bgr) → resize 112×112 → BGR→RGB → (img-127.5)/128.0 → 推理 → L2归一化 → (512,) 向量。embed_batch 批量版本",
+          "file": ["src/recognize/arcface.py"],
+          "status": "pending",
+          "depends": ["M2-T2"]
+        },
+        {
+          "id": "M3-T2",
+          "name": "人脸质量检查模块",
+          "description": "实现 src/utils/quality.py：quality_ok(face_bgr, min_w=80, ar_lo=0.6, ar_hi=1.6, blur_th=80.0) → bool，检查宽度/长宽比/拉普拉斯清晰度",
+          "file": ["src/utils/quality.py"],
+          "status": "pending",
+          "depends": ["M1-T1"]
+        },
+        {
+          "id": "M3-T3",
+          "name": "人脸库管理模块",
+          "description": "实现 src/recognize/gallery.py：FaceGallery 类，build_or_load()扫描photo/→检测最大脸→embed→按文件名分组取均值→缓存到cache/gallery.npz（比对mtime决定是否重算），match(feat, match_th, reject_th) → MatchResult(hit/stranger/ambiguous)",
+          "file": ["src/recognize/gallery.py"],
+          "status": "pending",
+          "depends": ["M3-T1", "M2-T3", "M3-T2"]
+        },
+        {
+          "id": "M3-T4",
+          "name": "人脸库健康度脚本",
+          "description": "实现 scripts/gallery_health.py：加载gallery → 计算 N×N 余弦相似度矩阵 → matplotlib热图 → 打印同人相似度和跨人最大相似度 → 标记异常对(跨人>0.3)。用于评估阈值和检查库质量",
+          "file": ["scripts/gallery_health.py"],
+          "status": "pending",
+          "depends": ["M3-T3"]
+        }
+      ]
+    },
+
+    {
+      "id": "M4",
+      "name": "巡航 MVP",
+      "description": "状态机骨架 + PATROL态（4预设位自动循环检测），不含SCAN态",
+      "status": "pending",
+      "acceptance": "4个预设位自动循环，每个停留4秒，检到人脸打日志并标记（但不进入扫描）",
+      "tasks": [
+        {
+          "id": "M4-T1",
+          "name": "状态机骨架与State枚举",
+          "description": "实现 src/scheduler/state_machine.py 骨架：State(IntEnum) 12个状态，ScanScheduler 类 __init__ / run 主循环结构 / _handle_key 键盘处理 / _frame_settled 帧差稳图判定",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M1-T5", "M2-T1", "M2-T3"]
+        },
+        {
+          "id": "M4-T2",
+          "name": "PATROL_GOTO + PATROL_DWELL 实现",
+          "description": "在状态机中实现 PATROL_GOTO（调用goto_preset + 设settle超时）和 PATROL_DWELL（稳图等待 + 持续1280检测 + min_confirm_frames连续确认 + 停留超时切下一个预设位）",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M4-T1"]
+        },
+        {
+          "id": "M4-T3",
+          "name": "主程序入口",
+          "description": "实现 src/main.py：加载config → 设LD_LIBRARY_PATH → HikPTZ.login → check_3d_positioning → 初始化ORT sessions → FaceGallery.build_or_load → RtspSource.start → ScanScheduler.run。含 graceful shutdown（Ctrl+C → logout + cleanup）",
+          "file": ["src/main.py"],
+          "status": "pending",
+          "depends": ["M4-T2", "M3-T3"]
+        },
+        {
+          "id": "M4-T4",
+          "name": "巡航联调测试",
+          "description": "运行 main.py，验证：4个预设位循环正常、稳图判定正确、检到人脸时日志输出、帧率达标、键盘q退出/h回预设位/space暂停正常",
+          "file": [],
+          "status": "pending",
+          "depends": ["M4-T3"]
+        }
+      ]
+    },
+
+    {
+      "id": "M5",
+      "name": "单预设位扫描",
+      "description": "状态机SCAN态完整流程（单预设位内）：ZOOM_IN→SETTLE→CAPTURE→RECOGNIZE→ZOOM_OUT，含追踪修正",
+      "status": "pending",
+      "acceptance": "单预设位下2人：自动逐个放大→识别→回位，命中显示姓名，陌生人标红",
+      "tasks": [
+        {
+          "id": "M5-T1",
+          "name": "SCAN_GOTO_PRESET + SCAN_DETECT 实现",
+          "description": "状态机中实现：PATROL_DWELL发现人脸后 → 生成scan_preset_queue → SCAN_GOTO_PRESET(goto_preset+稳图) → SCAN_DETECT(1280检测+person检测+建扫描队列，按面积desc+x asc排序)",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M4-T2"]
+        },
+        {
+          "id": "M5-T2",
+          "name": "SCAN_PICK + SCAN_ZOOM_IN + SCAN_SETTLE 实现",
+          "description": "状态机中实现：从扫描队列取PENDING目标 → zoom_to_bbox(expand=2.0) → 等稳图（帧差法 + 1.5s超时）。处理SDK失败时跳过目标",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M5-T1"]
+        },
+        {
+          "id": "M5-T3",
+          "name": "CaptureTracker 动态追踪修正模块",
+          "description": "实现 src/scheduler/capture_tracker.py：CaptureTracker 类，step(frame) 每帧决策（collect/correct/settling/giveup/none），含安全区/危险区判定、3D重定位修正(max 3次)、Kalman滤波器(4维cx,cy,vx,vy)预测、丢失超时(500ms Kalman / 1200ms放弃)",
+          "file": ["src/scheduler/capture_tracker.py"],
+          "status": "pending",
+          "depends": ["M2-T3", "M1-T6"]
+        },
+        {
+          "id": "M5-T4",
+          "name": "SCAN_CAPTURE 实现（集成CaptureTracker）",
+          "description": "状态机中实现 SCAN_CAPTURE：初始化CaptureTracker → 每帧调step → collect时采集face crop → correct时zoom_to_bbox重定位 → settling等0.5s → giveup时标DONE_UNRECOGNIZED → 采够min_samples或超时4s进RECOGNIZE",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M5-T2", "M5-T3"]
+        },
+        {
+          "id": "M5-T5",
+          "name": "SCAN_RECOGNIZE + SCAN_ZOOM_OUT 实现",
+          "description": "状态机中实现：多帧ArcFace embed取均值归一化 → gallery.match → 命中/陌生/模糊判定 → 更新target状态 → SCAN_ZOOM_OUT(goto_preset回当前预设位+稳图) → 回SCAN_PICK继续下一人",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M5-T4", "M3-T3"]
+        },
+        {
+          "id": "M5-T6",
+          "name": "单预设位扫描联调",
+          "description": "在一个预设位下放2-3人，验证：自动逐个zoom in → 采集 → 识别 → zoom out → 下一个人。验证追踪修正（让人移动），验证陌生人判定，验证超时放弃",
+          "file": [],
+          "status": "pending",
+          "depends": ["M5-T5"]
+        }
+      ]
+    },
+
+    {
+      "id": "M6",
+      "name": "多预设位 + ReID",
+      "description": "完整4预设位扫描 + SORT跟踪 + OSNet ReID跨预设位去重",
+      "status": "pending",
+      "acceptance": "跨预设位不重扫同一人；中途有人离开/进入能正确增删",
+      "tasks": [
+        {
+          "id": "M6-T1",
+          "name": "OSNet ReID模块",
+          "description": "实现 src/reid/osnet.py：OSNetReID 类，embed(person_bgr) → resize(128,256) → ImageNet归一化 → 推理 → L2归一化 → (512,) 向量。需下载 osnet_x0_25.onnx 到 models/reid/",
+          "file": ["src/reid/osnet.py"],
+          "status": "pending",
+          "depends": ["M2-T2"]
+        },
+        {
+          "id": "M6-T2",
+          "name": "SORT+ReID Tracker模块",
+          "description": "实现 src/track/sort_reid.py：Tracker类，Kalman+Hungarian匹配（代价=α*IoU距离+β*ReID距离），Track的reid_feat EMA更新(权重0.1)，snapshot_before_move/restore_after_move 跨zoom状态切换时的身份恢复",
+          "file": ["src/track/sort_reid.py"],
+          "status": "pending",
+          "depends": ["M6-T1"]
+        },
+        {
+          "id": "M6-T3",
+          "name": "全局已识别表 + 跨预设位去重",
+          "description": "在状态机中实现 IdentifiedPerson 全局表 + is_already_identified(reid_feat, threshold=0.5)。在 SCAN_DETECT 阶段对每个PENDING track查全局表，命中则直接复用结果跳过扫描",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M6-T2", "M5-T1"]
+        },
+        {
+          "id": "M6-T4",
+          "name": "SCAN_NEXT_PRESET 实现",
+          "description": "状态机中实现：当前预设位扫描队列空 → SCAN_NEXT_PRESET → 若scan_preset_queue还有 → tracker.snapshot_before_move → SCAN_GOTO_PRESET下一个；若4个全扫完 → 清空identified + tracker.reset → 回PATROL_GOTO",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M6-T3"]
+        },
+        {
+          "id": "M6-T5",
+          "name": "多预设位+ReID联调",
+          "description": "让同一人站在两个预设位重叠区域，验证不被重扫。在4个预设位分散5人，验证全扫一轮≤45秒。测试中途有人离开/新人进入的场景",
+          "file": [],
+          "status": "pending",
+          "depends": ["M6-T4"]
+        }
+      ]
+    },
+
+    {
+      "id": "M7",
+      "name": "可视化 + 日志 + 输出",
+      "description": "MJPEG Web流可视化、事件日志JSONL、陌生人抓拍落盘、录像控制、终端交互",
+      "status": "pending",
+      "acceptance": "浏览器访问 http://IP:8080 看到实时标注画面（HUD+bbox+名单+REC）、陌生人抓拍落盘、events.jsonl正确输出",
+      "tasks": [
+        {
+          "id": "M7-T1",
+          "name": "帧标注渲染模块",
+          "description": "实现 src/ui/visualizer.py：Visualizer类，render(frame, tracks, state, preset_id, queue_size, fps, is_recording, identified_names) → 返回标注后的np.ndarray。纯CPU OpenCV绘制，不调用imshow。叠加：人脸框+颜色+track_id+姓名/STRANGER、左上HUD、右侧已识别名单、[REC]标识",
+          "file": ["src/ui/visualizer.py"],
+          "status": "pending",
+          "depends": ["M5-T5"]
+        },
+        {
+          "id": "M7-T2",
+          "name": "MJPEG Web流服务",
+          "description": "实现 src/ui/web_stream.py：MjpegStreamServer类，Flask后台线程。路由：GET / 返回嵌入<img>的HTML页面，GET /stream 返回MJPEG boundary流，POST /api/command 接收控制指令(quit/reset/home/pause/record)。push_frame(annotated)做JPEG编码推入队列（丢老帧保新帧），poll_command()非阻塞取指令",
+          "file": ["src/ui/web_stream.py"],
+          "status": "pending",
+          "depends": ["M1-T1"]
+        },
+        {
+          "id": "M7-T3",
+          "name": "显示后端抽象 + stdin交互",
+          "description": "实现 src/ui/display.py：DisplayBackend类，根据config.display.mode切换web/opencv后端。统一接口 show(annotated_frame) + poll_command()。web模式下同时支持Flask API指令和终端stdin输入（非阻塞读取，输入q/r/h/p/v+回车）",
+          "file": ["src/ui/display.py"],
+          "status": "pending",
+          "depends": ["M7-T2"]
+        },
+        {
+          "id": "M7-T4",
+          "name": "事件日志模块",
+          "description": "实现 src/utils/event_logger.py：EventLogger类，log(target, preset_id) 追加到 output/events.jsonl，字段 ts/preset/track_id/result/name/sim/bbox/snapshot。文件追加模式，每行一个JSON对象",
+          "file": ["src/utils/event_logger.py"],
+          "status": "pending",
+          "depends": ["M1-T1"]
+        },
+        {
+          "id": "M7-T5",
+          "name": "陌生人抓拍落盘",
+          "description": "在 SCAN_RECOGNIZE 判定陌生人后，保存最佳 capture 帧到 output/strangers/{yyyymmdd-HHMMSS}-{trackid}.jpg，snapshot路径写入event log",
+          "file": ["src/scheduler/state_machine.py"],
+          "status": "pending",
+          "depends": ["M7-T4", "M5-T5"]
+        },
+        {
+          "id": "M7-T6",
+          "name": "录像控制集成",
+          "description": "在 _handle_command 中实现 'record'/'v' 切换录像状态，调用 HikPTZ.start_record/stop_record，visualizer渲染 [REC] 标识",
+          "file": ["src/scheduler/state_machine.py", "src/ui/visualizer.py"],
+          "status": "pending",
+          "depends": ["M7-T1", "M1-T5"]
+        },
+        {
+          "id": "M7-T7",
+          "name": "Web可视化联调",
+          "description": "完整运行系统，浏览器访问 http://IP:8080 验证：实时画面流畅（延迟<500ms）、巡航态HUD正确、扫描态框色正确、已识别名单滚动、POST /api/command 指令响应正常、终端stdin指令正常、陌生人抓拍文件存在、events.jsonl格式正确、录像REC同步",
+          "file": [],
+          "status": "pending",
+          "depends": ["M7-T1", "M7-T3", "M7-T4", "M7-T5", "M7-T6"]
+        }
+      ]
+    },
+
+    {
+      "id": "M8",
+      "name": "调优 & 验收",
+      "description": "参数调优、全场景验收测试、性能优化",
+      "status": "pending",
+      "acceptance": "通过全部 AC-1 ~ AC-12 验收标准",
+      "tasks": [
+        {
+          "id": "M8-T1",
+          "name": "人脸库阈值调优",
+          "description": "运行 gallery_health.py 生成相似度矩阵，根据实际分布调整 match_th / reject_th / cross_preset_th，更新 config.yaml",
+          "file": ["config/config.yaml"],
+          "status": "pending",
+          "depends": ["M7-T5"]
+        },
+        {
+          "id": "M8-T2",
+          "name": "PTZ参数调优",
+          "description": "实机测试调整 settle_diff_th / settle_timeout / expand_ratio / capture.timeout / tracking.safe_zone_ratio / correction_settle 等参数，确保稳图判定准确、追踪修正灵敏度合适",
+          "file": ["config/config.yaml"],
+          "status": "pending",
+          "depends": ["M7-T5"]
+        },
+        {
+          "id": "M8-T3",
+          "name": "全场景验收测试",
+          "description": "逐项执行 AC-1~AC-12：无人巡航 / 单人库内 / 单人库外 / 3人同时 / 跨预设位去重 / 4预设位5人全扫 / CAPTURE移动追踪 / 人离开 / 断流恢复 / SDK失败 / 录像 / 库缓存。记录通过/失败并修复",
+          "file": [],
+          "status": "pending",
+          "depends": ["M8-T1", "M8-T2"]
+        },
+        {
+          "id": "M8-T4",
+          "name": "性能瓶颈分析与优化",
+          "description": "检查各环节耗时打点日志，确认：GPU模型推理达标、PTZ机械动作时间合理、单人端到端≤5.5s、4预设位巡航一圈≤20s。若有瓶颈则针对性优化（如调整检测频率、减少不必要的推理等）",
+          "file": [],
+          "status": "pending",
+          "depends": ["M8-T3"]
+        },
+        {
+          "id": "M8-T5",
+          "name": "requirements.txt 与启动脚本",
+          "description": "生成 requirements.txt（onnxruntime-gpu/opencv-python-headless/numpy/pyyaml/scipy/flask/matplotlib），编写 run.sh 设置 LD_LIBRARY_PATH 并启动 python src/main.py，启动后打印 Web 流地址",
+          "file": ["requirements.txt", "run.sh"],
+          "status": "pending",
+          "depends": ["M8-T3"]
+        }
+      ]
+    }
+  ],
+
+  "summary": {
+    "total_milestones": 8,
+    "total_tasks": 44,
+    "critical_path": "M1→M2→M3→M4→M5→M6→M7→M8",
+    "parallel_opportunities": [
+      "M1-T4(SDK绑定) 与 M1-T6(geometry工具) 可并行",
+      "M2-T3(人脸检测) 与 M2-T4(人体检测) 可并行",
+      "M3-T1(ArcFace) 与 M3-T2(质量检查) 可并行",
+      "M6-T1(OSNet) 可在M5开发期间提前完成",
+      "M7-T1(渲染) 与 M7-T2(Web流) 与 M7-T4(事件日志) 三者可并行"
+    ],
+    "estimated_files": {
+      "src_modules": 17,
+      "config_files": 1,
+      "scripts": 4,
+      "total": 22
+    }
+  }
+}

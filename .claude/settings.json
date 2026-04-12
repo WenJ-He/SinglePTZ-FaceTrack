@@ -1,0 +1,60 @@
+{
+  "effortLevel": "high",
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "sk-860a0654627f1c8f6f2704f1ce13b46df7ab33aad20a63c2458c986ba5a5748a",
+    "ANTHROPIC_BASE_URL": "http://118.145.218.207:8080",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.1",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.1",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.1",
+    "ANTHROPIC_MODEL": "glm-5.1",
+    "ANTHROPIC_REASONING_MODEL": "glm-5.1",
+    "DISABLE_BUG_COMMAND": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_TELEMETRY": "1",
+    "ENABLE_TOOL_SEARCH": "1"
+  },
+  "model": "opus[1m]",
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(go:*)",
+      "Write(*)",
+      "Bash(ls:*)",
+      "Bash(git:*)",
+      "Update(*:*)",
+      "Bash(mv:*)",
+      "Bash(echo:*)",
+      "Bash(sed:*)",
+      "Bash(source:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(pkill:*)",
+      "Bash(touch:*)",
+      "Bash(grep:*)",
+      "Bash(deadcode:*)",
+      "Bash(sqlite3:*)",
+      "Bash(curl:*)",
+      "Bash(rg:*)",
+      "Bash(chmod:*)",
+      "Bash(lsof:*)",
+      "Bash(make:*)",
+      "Bash(PORT=:*)",
+      "Bash(find:*)",
+      "Bash(docker:*)",
+      "Bash(poetry:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Update(*)"
+    ],
+    "defaultMode": "bypassPermissions",
+    "deny": []
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "statusLine": {
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0,
+    "type": "command"
+  }
+}

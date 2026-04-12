@@ -1,0 +1,761 @@
+# SinglePTZ-FaceTrack 详细设计书
+
+**版本**：v0.1（初稿，待评审）
+**文档类型**：SDD (Software Design Document)
+**对应需求**：`doc/需求说明书.md` v0.1
+
+---
+
+## 1. 设计目标
+
+在《需求说明书》框定的范围内，给出一份**可直接动手实现**的 Python 工程方案：
+
+- 模块边界清晰、单进程运行；
+- SDK/模型/业务可独立替换（例如把海康 SDK 换成 ONVIF，或把 ArcFace 换成更强的模型）；
+- 所有配置走 YAML，方便在不同球机/现场快速切换；
+- 状态机主循环阻塞明确、容错路径明确，不会因为某次 PTZ 失败就卡死。
+
+---
+
+## 2. 总体架构
+
+```
+  ┌────────────────────────────────────────────────────────────┐
+  │                       Main Loop                            │
+  │                  (ScanScheduler 状态机)                    │
+  └──────────┬──────────────────┬──────────────────┬───────────┘
+             │                  │                  │
+   ┌─────────▼───────┐  ┌───────▼────────┐  ┌──────▼─────────┐
+   │ VideoSource     │  │ DetectorHub    │  │ HikPTZ         │
+   │ (RTSP → frames) │  │ face640/1280   │  │ (SDK ctypes    │
+   │                 │  │ person(yolov8n)│  │  wrapper)      │
+   └─────────────────┘  └───────┬────────┘  └────────────────┘
+                                │
+                  ┌─────────────┴───────────────┐
+                  │                             │
+           ┌──────▼──────┐              ┌───────▼────────┐
+           │ Tracker     │              │ FaceEmbedder   │
+           │ SORT + OSNet│              │ ArcFace 512-d  │
+           │ (ReID)      │              └───────┬────────┘
+           └──────┬──────┘                      │
+                  │                      ┌──────▼──────┐
+                  │                      │ FaceGallery │
+                  │                      │ (photo/+emb)│
+                  │                      └──────┬──────┘
+                  │                             │
+           ┌──────▼─────────────────────────────▼──────┐
+           │   Visualizer + EventLogger + Snapshots    │
+           └───────────────────────────────────────────┘
+```
+
+**主循环线程模型：单线程 + 协程化的阻塞等待**（PTZ 等待、稳图等待）。不引入多线程/多进程，避免 ctypes + OpenCV 的各种并发陷阱。视频取流可以跑在一个后台线程里做"最新帧"缓存（丢老帧保新帧），这是唯一的后台线程。
+
+---
+
+## 3. 目录结构
+
+```
+SinglePTZ-FaceTrack/
+├── HCNetSDKV6.../           # 保持原状，不动
+├── doc/
+│   ├── 需求说明书.md
+│   ├── 详细设计书.md        # ← 本文
+│   └── 枪击人脸放大变zoom操作说明.md
+├── models/                  # 保持原状
+│   ├── facedect/{640,1280}/
+│   ├── facerecognize/
+│   ├── person/              # ← 新增（若启用 A3）
+│   │   └── yolov8n.onnx
+│   └── reid/                # ← 新增
+│       └── osnet_x0_25.onnx
+├── photo/                   # 保持原状（人脸库源图）
+├── cache/
+│   └── gallery.npz          # ← 人脸库 embedding 缓存（首次启动生成）
+├── config/
+│   └── config.yaml          # ← 所有参数（IP/阈值/路径）
+├── logs/
+│   └── app.log
+├── output/
+│   ├── events.jsonl
+│   └── strangers/
+└── src/
+    ├── __init__.py
+    ├── main.py                    # 程序入口
+    ├── config.py                  # YAML 加载 + dataclass
+    ├── sdk/
+    │   ├── hik_sdk.py             # ctypes 绑定 + 结构体
+    │   └── hik_ptz.py             # PTZ 业务封装
+    ├── video/
+    │   └── rtsp_source.py         # OpenCV 后台线程帧缓存
+    ├── detect/
+    │   ├── yolo_face.py           # 640 & 1280 共用
+    │   └── yolo_person.py         # YOLOv8n person 过滤
+    ├── reid/
+    │   └── osnet.py               # OSNet ReID embedding
+    ├── track/
+    │   └── sort_reid.py           # SORT + ReID 身份维持
+    ├── recognize/
+    │   ├── arcface.py             # ArcFace embedder
+    │   └── gallery.py             # photo/ 加载 + 索引 + 缓存
+    ├── scheduler/
+    │   └── state_machine.py       # 核心扫描调度器
+    ├── ui/
+    │   └── visualizer.py          # OpenCV 叠加 + 键盘交互
+    └── utils/
+        ├── logger.py
+        ├── quality.py             # 清晰度/角度/尺寸过滤
+        └── geometry.py            # bbox 外扩/归一化/映射
+```
+
+---
+
+## 4. 核心数据结构
+
+```python
+# src/detect/yolo_face.py
+@dataclass
+class Detection:
+    bbox: Tuple[int, int, int, int]     # x1,y1,x2,y2 (原图坐标)
+    score: float
+    cls_id: int = 0                     # 0=face, 1=person
+
+# src/track/sort_reid.py
+@dataclass
+class Track:
+    track_id: int
+    bbox: Tuple[int, int, int, int]     # 最近一帧的 bbox（全景坐标系）
+    kalman_state: np.ndarray            # 8 维 SORT 状态
+    reid_feat: Optional[np.ndarray]     # 512 维 OSNet，可能为 None
+    last_seen_ts: float
+    scan_status: ScanStatus             # PENDING / DONE_HIT / DONE_STRANGER / DONE_UNRECOGNIZED
+    scan_result: Optional[str] = None   # 姓名或 "STRANGER"
+    scan_sim: float = 0.0
+    age: int = 0                        # 出现多少帧
+    hits: int = 0                       # 被关联多少次
+
+class ScanStatus(IntEnum):
+    PENDING = 0
+    SCANNING = 1
+    DONE_HIT = 2
+    DONE_STRANGER = 3
+    DONE_UNRECOGNIZED = 4     # 质量不够，不当陌生人
+    LOST = 5                  # 扫描中途丢失
+
+# src/recognize/gallery.py
+@dataclass
+class GalleryEntry:
+    name: str
+    feat: np.ndarray          # (512,) L2 归一化后的均值向量
+    src_files: List[str]      # 源文件路径列表
+```
+
+---
+
+## 5. 关键模块设计
+
+### 5.1 海康 SDK 绑定 `src/sdk/hik_sdk.py`
+
+**职责**：用 `ctypes` 加载 `libhcnetsdk.so`，声明必要的结构体和函数签名。
+
+```python
+import ctypes as C
+from ctypes import c_int, c_long, c_uint, c_char, c_char_p, c_byte, POINTER, Structure
+
+_LIB_DIR = Path(__file__).parent.parent.parent / \
+           "HCNetSDKV6.1.11.5_build20251204_linux64_ZH/..."
+hcnet = C.CDLL(str(_LIB_DIR / "libhcnetsdk.so"))
+
+class NET_DVR_USER_LOGIN_INFO(Structure):
+    _fields_ = [
+        ("sDeviceAddress", c_char * 129),
+        ("byUseTransport", c_byte),
+        ("wPort", C.c_ushort),
+        ("sUserName", c_char * 64),
+        ("sPassword", c_char * 64),
+        ("cbLoginResult", C.c_void_p),
+        ("pUser", C.c_void_p),
+        ("bUseAsynLogin", c_int),
+        # ... 其余字段按手册补齐，不用的留 byRes
+        ("byRes2", c_byte * 128),
+    ]
+
+class NET_DVR_DEVICEINFO_V40(Structure): ...  # 按手册
+class NET_DVR_POINT_FRAME(Structure):
+    _fields_ = [
+        ("xTop", c_int), ("yTop", c_int),
+        ("xBottom", c_int), ("yBottom", c_int),
+        ("bCounter", c_int),
+    ]
+
+# 函数签名
+hcnet.NET_DVR_Init.restype = c_int
+hcnet.NET_DVR_Login_V40.restype = c_long
+hcnet.NET_DVR_Login_V40.argtypes = [
+    POINTER(NET_DVR_USER_LOGIN_INFO), POINTER(NET_DVR_DEVICEINFO_V40)
+]
+hcnet.NET_DVR_PTZSelZoomIn_EX.argtypes = [c_long, c_long, POINTER(NET_DVR_POINT_FRAME)]
+hcnet.NET_DVR_PTZSelZoomIn_EX.restype = c_int
+hcnet.NET_DVR_PTZPreset_Other.argtypes = [c_long, c_long, c_uint, c_uint]
+hcnet.NET_DVR_PTZPreset_Other.restype = c_int
+hcnet.NET_DVR_GetLastError.restype = c_uint
+```
+
+> **实施提示**：`_LIB_DIR` 下会有 `libhcnetsdk.so`、`libHCCore.so`、`libcrypto.so.1.1`、`libssl.so.1.1`、`libhpr.so`、`libHCPreview.so` 等依赖，启动前需要设置 `LD_LIBRARY_PATH`，或者在 Python 进程里 `os.environ` 预先注入，然后再 `CDLL`。另外 `libhcnetsdk.so` 会用 `dlopen` 自己加载其他 .so，所以 `LD_LIBRARY_PATH` 必须在子进程启动之前就已设置（不能 `CDLL` 前后再改）。
+
+### 5.2 PTZ 业务封装 `src/sdk/hik_ptz.py`
+
+```python
+class HikPTZ:
+    def __init__(self, cfg: HikConfig): ...
+    def login(self) -> None: ...
+    def logout(self) -> None: ...
+    def check_3d_positioning(self) -> bool:
+        """调用 NET_DVR_GetDeviceAbility(DEVICE_ABILITY_INFO)，
+        在返回的 XML 里查找 <PTZZoomIn> 节点。"""
+
+    def zoom_to_bbox(self, bbox: Tuple[int,int,int,int],
+                     frame_w: int, frame_h: int,
+                     expand: float = 1.5) -> bool:
+        """把原图坐标的 bbox 外扩、归一化到 [0,255]，
+        调用 NET_DVR_PTZSelZoomIn_EX。"""
+        cx = (bbox[0]+bbox[2]) / 2
+        cy = (bbox[1]+bbox[3]) / 2
+        w  = (bbox[2]-bbox[0]) * expand
+        h  = (bbox[3]-bbox[1]) * expand
+        x1, y1 = max(cx-w/2, 0), max(cy-h/2, 0)
+        x2, y2 = min(cx+w/2, frame_w-1), min(cy+h/2, frame_h-1)
+        pf = NET_DVR_POINT_FRAME()
+        pf.xTop    = int(x1 * 255 / frame_w)
+        pf.yTop    = int(y1 * 255 / frame_h)
+        pf.xBottom = int(x2 * 255 / frame_w)
+        pf.yBottom = int(y2 * 255 / frame_h)
+        pf.bCounter = 0
+        return bool(hcnet.NET_DVR_PTZSelZoomIn_EX(self.user_id, self.channel, byref(pf)))
+
+    def goto_home_preset(self) -> bool:
+        """GOTO_PRESET=39 (SDK 枚举)，默认去到 Preset #1"""
+        return bool(hcnet.NET_DVR_PTZPreset_Other(self.user_id, self.channel, 39, 1))
+```
+
+### 5.3 视频取流 `src/video/rtsp_source.py`
+
+```python
+class RtspSource:
+    """后台线程 grab，主线程 retrieve 最新帧。丢老帧保新帧。"""
+    def __init__(self, url: str, reconnect_interval: float = 2.0): ...
+    def start(self): ...   # 启线程
+    def read(self) -> Optional[np.ndarray]: ...  # 最新一帧
+    def stop(self): ...
+
+    def _loop(self):
+        while not self._stop:
+            cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            while not self._stop:
+                ok = cap.grab()
+                if not ok: break
+                ok, frame = cap.retrieve()
+                if not ok: break
+                with self._lock:
+                    self._latest = frame
+                    self._latest_ts = time.time()
+            cap.release()
+            time.sleep(self.reconnect_interval)
+```
+
+### 5.4 人脸检测 `src/detect/yolo_face.py`
+
+**关键**：模型输出是 `(1, 5, N)` 的原始预测（未做 NMS），需要自己后处理。5 = `cx, cy, w, h, conf`。单类（face）。
+
+```python
+class YoloFace:
+    def __init__(self, onnx_path: str, input_size: int,
+                 conf: float = 0.35, iou: float = 0.5, providers=None):
+        self.sess = ort.InferenceSession(onnx_path, providers=providers or _auto_providers())
+        self.input_name = self.sess.get_inputs()[0].name
+        self.input_size = input_size
+        self.conf = conf
+        self.iou  = iou
+
+    def detect(self, img_bgr: np.ndarray) -> List[Detection]:
+        # 1. letterbox 到 input_size
+        blob, scale, (pad_x, pad_y) = letterbox(img_bgr, self.input_size)
+        blob = blob.transpose(2,0,1)[None].astype(np.float32) / 255.0
+        # 2. 推理
+        out = self.sess.run(None, {self.input_name: blob})[0]   # (1,5,N)
+        # 3. 后处理：转 xyxy + conf 过滤 + NMS
+        out = out[0].T                                           # (N,5)
+        conf = out[:, 4]
+        mask = conf > self.conf
+        out = out[mask]
+        if out.size == 0: return []
+        cx,cy,w,h = out[:,0],out[:,1],out[:,2],out[:,3]
+        x1 = cx - w/2; y1 = cy - h/2; x2 = cx + w/2; y2 = cy + h/2
+        boxes_input = np.stack([x1,y1,x2,y2], axis=1)
+        # 4. NMS（cv2.dnn.NMSBoxes 或手写）
+        idxs = cv2.dnn.NMSBoxes(
+            [[float(x1[i]),float(y1[i]),float(x2[i]-x1[i]),float(y2[i]-y1[i])] for i in range(len(x1))],
+            conf[mask].tolist(), self.conf, self.iou
+        )
+        if len(idxs)==0: return []
+        # 5. 反 letterbox 到原图
+        idxs = np.array(idxs).flatten()
+        boxes = boxes_input[idxs]
+        scores = conf[mask][idxs]
+        boxes[:,[0,2]] -= pad_x
+        boxes[:,[1,3]] -= pad_y
+        boxes /= scale
+        return [Detection(tuple(map(int,b)), float(s)) for b,s in zip(boxes, scores)]
+```
+
+> **注意**：letterbox 保持长宽比填充是必须的，否则 YOLO11 边缘小脸会 miss。
+>
+> **两个实例**：程序里会构造两个 `YoloFace` 实例，全景态用 1280，近景态用 640，各自独占一个 ORT session，避免反复切换输入尺寸。
+
+### 5.5 人脸识别 `src/recognize/arcface.py`
+
+```python
+class ArcFace:
+    def __init__(self, onnx_path: str, providers=None):
+        self.sess = ort.InferenceSession(onnx_path, providers=providers or _auto_providers())
+        self.input_name = self.sess.get_inputs()[0].name
+
+    def embed(self, face_bgr: np.ndarray) -> np.ndarray:
+        """face_bgr: 任意尺寸的 BGR face crop（已外扩）。返回 (512,) 单位向量。"""
+        img = cv2.resize(face_bgr, (112,112))
+        img = img[:,:,::-1].astype(np.float32)        # BGR→RGB
+        img = (img - 127.5) / 128.0                    # ArcFace 官方归一化
+        img = img.transpose(2,0,1)[None]               # (1,3,112,112)
+        feat = self.sess.run(None, {self.input_name: img})[0][0]   # (512,)
+        feat = feat / (np.linalg.norm(feat) + 1e-9)
+        return feat
+
+    def embed_batch(self, faces: List[np.ndarray]) -> np.ndarray:
+        """批量版本，供 Gallery 建库使用。"""
+```
+
+> **对齐说明**：当前检测模型没有 landmark，先用简单的 bbox crop + resize 方案，**bbox 必须向外按 1.3~1.5 倍略微扩张**以包含下巴/头顶。如果后续识别准确率不达标，再接入轻量 landmark 模型（如 PFLD）做 5 点仿射对齐。
+
+### 5.6 人脸库 `src/recognize/gallery.py`
+
+```python
+class FaceGallery:
+    def __init__(self, photo_dir: Path, cache_path: Path,
+                 detector: YoloFace, embedder: ArcFace):
+        self.entries: Dict[str, GalleryEntry] = {}
+
+    def build_or_load(self) -> None:
+        """1) 若 cache 存在且所有 photo 的 mtime 未变，直接 np.load
+           2) 否则：枚举 photo/，文件名去扩展名作为 name_raw
+              同名（name_raw 去掉末尾 _NN）归为一个身份
+              对每张做人脸检测，取最大脸，embed
+              最终每个身份取所有 embedding 的均值并 L2 归一化
+              落盘 .npz"""
+    def match(self, feat: np.ndarray,
+              match_th: float, reject_th: float) -> MatchResult:
+        """返回 top-1 相似度和命中状态"""
+        names = list(self.entries.keys())
+        mat = np.stack([self.entries[n].feat for n in names])   # (K,512)
+        sims = mat @ feat                                        # 余弦（已归一化）
+        top = int(np.argmax(sims))
+        s = float(sims[top])
+        if s >= match_th:   return MatchResult("hit", names[top], s)
+        if s <  reject_th:  return MatchResult("stranger", None, s)
+        return MatchResult("ambiguous", names[top], s)
+```
+
+### 5.7 ReID `src/reid/osnet.py`
+
+选型：**OSNet_x0_25**（~0.3M 参数，CPU 实时），ONNX 输入 `1×3×256×128`，输出 512-d。
+
+```python
+class OSNetReID:
+    def __init__(self, onnx_path: str, providers=None): ...
+    def embed(self, person_bgr: np.ndarray) -> np.ndarray:
+        img = cv2.resize(person_bgr, (128,256))
+        img = img[:,:,::-1].astype(np.float32)/255.0
+        mean = np.array([0.485,0.456,0.406],dtype=np.float32)
+        std  = np.array([0.229,0.224,0.225],dtype=np.float32)
+        img = (img-mean)/std
+        img = img.transpose(2,0,1)[None]
+        feat = self.sess.run(None,{self.input_name:img})[0][0]
+        return feat / (np.linalg.norm(feat)+1e-9)
+```
+
+> **Person bbox 来源**：
+> - 若启用 YOLOv8n-person（设计书 §5.8），直接用其 bbox；
+> - 否则降级：`person_bbox = expand(face_bbox, right=face_w, left=face_w, down=4*face_h, up=0.3*face_h)`，然后 clip 到图像边界。
+
+### 5.8 人体检测（可选）`src/detect/yolo_person.py`
+
+YOLOv8n COCO 通用版本，只保留 class_id==0 (person)。当配置 `person_detector.enabled: true` 时启用。
+
+### 5.9 Tracker `src/track/sort_reid.py`
+
+**算法**：SORT 的框架（Kalman + Hungarian + IoU 代价），在匹配代价里混入 ReID 特征余弦距离：
+
+```
+cost[i,j] = α * (1 - IoU(det_i, track_j))  +  β * reid_dist(det_i, track_j)
+  with α=0.6, β=0.4
+```
+
+**关键细节**：
+- Track 的 `reid_feat` 使用 **EMA 更新**（新特征权重 0.1），避免单次遮挡特征漂移；
+- 跨"全景→特写→全景"切换时：
+  - 状态机在离开全景前快照 `active_tracks_snapshot`；
+  - 返回全景后第一帧，把当前所有 detection 与 snapshot 做**全局匈牙利匹配**（只用 ReID 距离，不看 IoU，因为相机动过）；
+  - 匹配上的复用 track_id + scan_status；
+  - 未匹配上的 detection 新建 track_id（PENDING）；
+  - 未匹配上的 snapshot track 标记为 LOST。
+- 未启用 ReID 时退化为纯 IoU-SORT + 置信度高时保留身份。
+
+### 5.10 调度器状态机 `src/scheduler/state_machine.py`
+
+**状态**：
+
+```python
+class State(IntEnum):
+    INIT            = 0
+    PANO_SCAN       = 1  # 全景检测、刷新扫描队列
+    PICK_TARGET     = 2  # 从队列里挑下一个
+    ZOOM_IN         = 3  # 下发 3D 定位指令
+    WAIT_SETTLE     = 4  # 等稳图
+    CAPTURE         = 5  # 近景采集 & 质检
+    RECOGNIZE       = 6  # ArcFace + gallery 匹配
+    ZOOM_OUT        = 7  # 回家位
+    COOLDOWN_IDLE   = 8  # 队列空，全景观察
+```
+
+**状态转换表**（简化）：
+
+| 状态 | 触发条件 | 下一状态 |
+|---|---|---|
+| INIT | 初始化完成 | ZOOM_OUT（强制回家位校准） |
+| ZOOM_OUT | 稳图 OR 超时 1.5s | PANO_SCAN |
+| PANO_SCAN | 队列非空 | PICK_TARGET |
+| PANO_SCAN | 队列空 | COOLDOWN_IDLE |
+| COOLDOWN_IDLE | 全景态发现新 PENDING | PANO_SCAN |
+| PICK_TARGET | 取到目标 T | ZOOM_IN |
+| PICK_TARGET | 无可用目标 | PANO_SCAN |
+| ZOOM_IN | SDK 调用 OK | WAIT_SETTLE |
+| ZOOM_IN | SDK 失败 | mark T as DONE_UNRECOGNIZED, ZOOM_OUT |
+| WAIT_SETTLE | 帧差 < τ 或 超时 2s | CAPTURE |
+| CAPTURE | 采到 ≥N 张高质量脸 OR 超时 3s | RECOGNIZE |
+| CAPTURE | 一直采不到脸 超时 3s | mark T as DONE_UNRECOGNIZED, ZOOM_OUT |
+| RECOGNIZE | 结果是 hit/stranger | mark T, ZOOM_OUT |
+| RECOGNIZE | 结果是 ambiguous & 未超时 | 回 CAPTURE |
+| RECOGNIZE | 结果是 ambiguous & 超时 | 按 top1 兜底 mark, ZOOM_OUT |
+
+**主循环伪代码**：
+
+```python
+def run(self):
+    self.state = State.INIT
+    target: Optional[Track] = None
+    while not self.stop_flag:
+        frame = self.video.read()
+        if frame is None: continue
+
+        if self.state == State.INIT:
+            self._init_all()
+            self.ptz.goto_home_preset()
+            self._wait_settle(timeout=2.5)
+            self.state = State.PANO_SCAN
+
+        elif self.state == State.PANO_SCAN:
+            dets = self.face1280.detect(frame)
+            person_dets = self.person_det.detect(frame) if self.cfg.reid.enabled_person_det \
+                          else [self._fallback_person_from_face(d) for d in dets]
+            self.tracker.update(frame, dets, person_dets)
+            self.visualizer.overlay(frame, self.tracker.tracks, self.state)
+            pending = [t for t in self.tracker.tracks if t.scan_status == ScanStatus.PENDING]
+            if pending:
+                target = self._pick(pending)   # 按面积 desc + x asc
+                self.state = State.PICK_TARGET
+            else:
+                self.state = State.COOLDOWN_IDLE
+
+        elif self.state == State.PICK_TARGET:
+            if target is None or target.scan_status != ScanStatus.PENDING:
+                self.state = State.PANO_SCAN; continue
+            target.scan_status = ScanStatus.SCANNING
+            ok = self.ptz.zoom_to_bbox(target.bbox, frame.shape[1], frame.shape[0], expand=1.5)
+            if not ok:
+                target.scan_status = ScanStatus.DONE_UNRECOGNIZED
+                self.state = State.ZOOM_OUT; continue
+            self.state = State.WAIT_SETTLE
+            self.wait_deadline = time.time() + 2.0
+
+        elif self.state == State.WAIT_SETTLE:
+            if self._frame_settled(frame) or time.time() > self.wait_deadline:
+                self.capture_buf = []
+                self.capture_deadline = time.time() + 3.0
+                self.state = State.CAPTURE
+
+        elif self.state == State.CAPTURE:
+            dets = self.face640.detect(frame)
+            if dets:
+                best = self._pick_center_largest(dets, frame.shape)
+                face = self._crop(frame, best.bbox, expand=1.3)
+                if quality_ok(face):
+                    self.capture_buf.append(face)
+            if len(self.capture_buf) >= self.cfg.capture.min_samples or time.time() > self.capture_deadline:
+                self.state = State.RECOGNIZE
+
+        elif self.state == State.RECOGNIZE:
+            if not self.capture_buf:
+                target.scan_status = ScanStatus.DONE_UNRECOGNIZED
+            else:
+                feats = [self.arcface.embed(f) for f in self.capture_buf]
+                mean = np.mean(feats, axis=0); mean /= np.linalg.norm(mean)+1e-9
+                res = self.gallery.match(mean,
+                        self.cfg.recognize.match_th, self.cfg.recognize.reject_th)
+                if res.kind == "hit":
+                    target.scan_status = ScanStatus.DONE_HIT
+                    target.scan_result = res.name
+                    target.scan_sim    = res.sim
+                elif res.kind == "stranger":
+                    target.scan_status = ScanStatus.DONE_STRANGER
+                    target.scan_sim    = res.sim
+                    self._save_stranger_snapshot(target, self.capture_buf[-1])
+                else:  # ambiguous
+                    if time.time() < self.capture_deadline and len(self.capture_buf) < self.cfg.capture.max_samples:
+                        self.state = State.CAPTURE; continue
+                    target.scan_status = ScanStatus.DONE_HIT if res.name else ScanStatus.DONE_UNRECOGNIZED
+                    target.scan_result = res.name
+                    target.scan_sim    = res.sim
+                self.event_logger.log(target)
+            self.state = State.ZOOM_OUT
+
+        elif self.state == State.ZOOM_OUT:
+            self.ptz.goto_home_preset()
+            self._wait_settle(timeout=2.5)
+            self.state = State.PANO_SCAN
+
+        elif self.state == State.COOLDOWN_IDLE:
+            # 继续在家位观察，跑 tracker，发现新 PENDING 就跳回 PANO_SCAN
+            dets = self.face1280.detect(frame)
+            self.tracker.update(frame, dets, ...)
+            if any(t.scan_status == ScanStatus.PENDING for t in self.tracker.tracks):
+                self.state = State.PANO_SCAN
+
+        self.visualizer.show(frame)
+        key = cv2.waitKey(1) & 0xFF
+        self._handle_key(key)
+```
+
+### 5.11 稳图判定 `_frame_settled`
+
+```python
+def _frame_settled(self, frame):
+    if self._prev_frame is None:
+        self._prev_frame = frame; return False
+    g1 = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    g0 = cv2.cvtColor(self._prev_frame, cv2.COLOR_BGR2GRAY)
+    if g1.shape != g0.shape: g0 = cv2.resize(g0, g1.shape[::-1])
+    diff = cv2.absdiff(g1, g0).mean()
+    self._prev_frame = frame
+    return diff < self.cfg.ptz.settle_diff_th   # 默认 2.0
+```
+
+### 5.12 人脸质量检查 `src/utils/quality.py`
+
+```python
+def quality_ok(face_bgr,
+               min_w=80, ar_lo=0.6, ar_hi=1.6, blur_th=80.0) -> bool:
+    h, w = face_bgr.shape[:2]
+    if w < min_w: return False
+    ar = h / (w + 1e-6)
+    if ar < ar_lo or ar > ar_hi: return False
+    gray = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2GRAY)
+    lap = cv2.Laplacian(gray, cv2.CV_64F).var()
+    return lap >= blur_th
+```
+
+### 5.13 可视化 `src/ui/visualizer.py`
+
+```python
+COLOR_HIT       = (0, 255, 0)
+COLOR_STRANGER  = (0, 0, 255)
+COLOR_PENDING   = (0, 255, 255)
+COLOR_UNKNOWN   = (180,180,180)
+COLOR_SCANNING  = (255, 128, 0)
+
+def overlay(frame, tracks, state):
+    # 左上 HUD：state、队列剩余、FPS
+    # 每个 track：画 bbox + ID + (姓名 / "STRANGER" / 状态)
+    # 右侧：已识别名单滚动
+```
+
+---
+
+## 6. 配置文件 `config/config.yaml`
+
+```yaml
+hik:
+  ip: "192.168.1.64"         # TODO 改为真实值
+  port: 8000
+  user: "admin"
+  password: "CHANGE_ME"
+  channel: 1
+  home_preset: 1
+  rtsp_url: "rtsp://admin:CHANGE_ME@192.168.1.64:554/Streaming/Channels/101"
+  sdk_lib_dir: "HCNetSDKV6.1.11.5_build20251204_linux64_ZH_20260320152102/HCNetSDKV6.1.11.5_build20251204_linux64_ZH/库文件"
+
+models:
+  face_wide:    "models/facedect/1280/best.onnx"
+  face_close:   "models/facedect/640/model.onnx"
+  arcface:      "models/facerecognize/model.onnx"
+  reid:         "models/reid/osnet_x0_25.onnx"
+  person:       "models/person/yolov8n.onnx"
+
+runtime:
+  prefer_gpu: true            # 若检测到 CUDAExecutionProvider 则用
+  pano_fps_target: 5
+  close_fps_target: 15
+
+detect:
+  face_wide_conf: 0.30
+  face_wide_iou:  0.5
+  face_close_conf: 0.35
+  face_close_iou:  0.5
+
+track:
+  iou_weight: 0.6
+  reid_weight: 0.4
+  max_age: 30
+  min_hits: 3
+  reid_ema: 0.1
+
+ptz:
+  expand_ratio: 1.5
+  settle_diff_th: 2.0
+  settle_timeout: 2.0
+
+capture:
+  min_samples: 3
+  max_samples: 5
+  timeout: 3.0
+
+recognize:
+  match_th:  0.35
+  reject_th: 0.20
+
+reid:
+  enabled_person_det: true    # 若 A3 不允许引入 YOLOv8n，改 false
+
+output:
+  strangers_dir: "output/strangers"
+  events_jsonl:  "output/events.jsonl"
+
+log:
+  level: "INFO"
+  file:  "logs/app.log"
+```
+
+---
+
+## 7. 数据流
+
+### 7.1 启动序列
+
+```
+main.py
+  ├─ load config
+  ├─ ensure LD_LIBRARY_PATH → hik_sdk.load
+  ├─ HikPTZ.login → check_3d_positioning → goto_home_preset
+  ├─ ORT sessions: face1280 / face640 / arcface / osnet / (person)
+  ├─ FaceGallery.build_or_load (photo/ → cache/gallery.npz)
+  ├─ RtspSource.start
+  └─ ScanScheduler.run
+```
+
+### 7.2 单个人端到端时序
+
+```
+t=0.00  PANO_SCAN 检测到 3 张脸，tracker 建立 T1 T2 T3 (全部 PENDING)
+t=0.05  PICK_TARGET 选 T1 (面积最大)
+t=0.06  PTZ.zoom_to_bbox(T1) → SDK OK
+t=0.06  WAIT_SETTLE (帧差监控)
+t=1.20  帧差稳定 → CAPTURE
+t=1.20~2.80 采 3~5 张 face_close 检测结果 & 质检
+t=2.80  ArcFace embed ×5, mean, normalize
+t=2.82  gallery.match → hit ("张锡宇", 0.47)
+t=2.82  T1.scan_status = DONE_HIT
+t=2.83  ZOOM_OUT: goto_home_preset
+t=4.20  稳图 → PANO_SCAN
+t=4.25  tracker 用 OSNet 把上一轮 T2 T3 重新对齐到新帧（身份复用）
+t=4.25  PICK_TARGET 选 T2 ...
+```
+
+---
+
+## 8. 异常处理矩阵
+
+| 异常点 | 策略 |
+|---|---|
+| SDK 登录失败 | 重试 3 次，每次间隔 2 秒；仍失败则退出并打印错误码 |
+| 3D 定位能力集缺失 | 启动阶段断言失败，退出并提示 |
+| `NET_DVR_PTZSelZoomIn_EX` 返回 FALSE | 该目标置 DONE_UNRECOGNIZED，跳下一个 |
+| 预置位不存在 | 打印告警，回退为"反向坐标缩小"兜底 |
+| RTSP 断流 | 后台线程自愈，5 秒内重连；主循环 `read()` 返回 None 跳过本次 |
+| 某张人脸库图片 detect 不到脸 | 启动时 warning，跳过该图 |
+| ORT CUDAExecutionProvider 不可用 | 自动 fallback 到 CPU，INFO 级日志 |
+| 目标在扫描中消失（帧差稳后近景无人脸） | 3 秒超时后置 DONE_UNRECOGNIZED，记日志 |
+| 近景持续检到多脸 | 选最靠近画面中心、面积最大的一个 |
+
+---
+
+## 9. 性能预算（CPU 基线）
+
+| 环节 | 估计耗时 | 说明 |
+|---|---|---|
+| face1280 推理 (CPU) | 180~250 ms | 全景态一次/200 ms 足够 |
+| face640  推理 (CPU) | 40~70 ms | 特写态 ~15 FPS 可行 |
+| ArcFace embed (CPU, bs=1) | 15~25 ms | 单人 5 张 ≈ 100 ms |
+| OSNet embed  (CPU, bs=1) | 5~10 ms | 多人 10 个 ≈ 80 ms |
+| PTZ 3D 定位 + 稳图 | 1.0~1.5 s | 主要耗时 |
+| 单人端到端 | 2.5~4.0 s | 达到 NFR-1 目标 |
+
+> **GPU 加速**：若有 CUDA/TensorRT，ORT session 自动用 CUDAExecutionProvider，face1280 可降到 15~25 ms，整体不变（瓶颈变成 PTZ 机械动作）。
+
+---
+
+## 10. 开发里程碑建议
+
+| Milestone | 产物 | 验收点 |
+|---|---|---|
+| M1 SDK 打通 | `hik_sdk.py` + `hik_ptz.py` + smoke test | 能 login / 读能力集 / goto_home / 手动给一个框 zoom in/out |
+| M2 取流 + 检测 | `rtsp_source.py` + `yolo_face.py` | OpenCV 窗口里看到 1280 模型稳定框出全景所有脸 |
+| M3 识别 + 库 | `arcface.py` + `gallery.py` | 对 `photo/` 自测，正对正 ≥0.6，交叉 <0.2 |
+| M4 状态机 MVP | `scheduler/state_machine.py` (无 ReID) | 单人场景：自动放大 → 识别 → 回家位；多人按顺序扫一遍 |
+| M5 Tracker + ReID | `track/sort_reid.py` + `reid/osnet.py` | 3 人场景：扫过一遍不重扫；中途有人离开/进入能正确增删 |
+| M6 可视化 + 日志 | `visualizer.py` + `events.jsonl` | UI 达到需求 FR-9；陌生人抓拍落盘 |
+| M7 调优 & 验收 | `config.yaml` 调参 | 达成 §8 的所有 AC-* |
+
+---
+
+## 11. 测试要点
+
+- **单元**：bbox 归一化 & 外扩公式必须有单测（几个边角 case，比如 bbox 贴边、bbox 超出画面）；YOLO 后处理 NMS 对照 ground truth。
+- **人脸库健康度**：M3 完成后跑一次 self-match，每个身份对自己的余弦相似度应该是 1.0（同文件），与其他身份应 < 0.3；若有异常对（如两张脸图其实是同一人用不同名字），启动阶段 WARN。
+- **人脸库体检脚本**：`scripts/gallery_health.py` 输出一个 NxN 相似度矩阵热图，帮助评估阈值。
+- **PTZ 回归**：手工给几个人工 bbox，验证放大位置正确、回家位正确；用 3D 定位失败的 mock 验证异常路径。
+- **集成**：用一段离线 RTSP 模拟流（`gst-rtsp-server` 或 `mediamtx`）配合固定视频，验证状态机在无真机时也可复现。
+
+---
+
+## 12. 待你确认的开放问题（与需求书 §7 对齐）
+
+> 设计先按默认值落地，你确认后我再改，不会重写代码大骨架。
+
+1. **球机连接参数**（A1）：真实 IP/用户名/密码——目前 config 里是占位。
+2. **球机型号/倍率**（A2）：影响 `ptz.settle_timeout` 默认值。
+3. **YOLOv8n person 引入**（A3）：同意的话我在 `models/person/` 放一个 6MB 级别的 COCO 权重并只保留 person 类；不同意就走"面部框向下膨胀"降级。
+4. **预设位号**（A4）：默认 Preset #1 作为全景家位。
+5. **扫描顺序**（A5）：默认面积 desc → x asc；是否要改成严格左→右？
+6. **识别阈值**（A6）：默认 0.35 / 0.20，建库后跑一遍 self-match 再调。
+7. **是否循环全体重扫**（A7）：默认只扫"新 PENDING"；是否要每 N 分钟强制重扫？
+8. **人脸对齐**（A8）：先不做 5 点对齐，识别率不达标再加。
+9. **GPU**（A9）：默认自动检测 CUDA。
+10. **音频/录像**（A10）：默认关闭。
