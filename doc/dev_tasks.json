@@ -25,7 +25,7 @@
           "name": "配置加载模块",
           "description": "实现 src/config.py：YAML → dataclass 映射，含 HikConfig / PatrolConfig / ModelConfig / DetectConfig / TrackConfig / PtzConfig / CaptureConfig / RecognizeConfig / ReidConfig / OutputConfig / LogConfig 全部子结构",
           "file": ["src/config.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T1"]
         },
         {
