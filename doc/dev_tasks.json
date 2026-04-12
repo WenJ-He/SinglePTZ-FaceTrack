@@ -383,7 +383,7 @@
       "id": "M8",
       "name": "调优 & 验收",
       "description": "参数调优、全场景验收测试、性能优化",
-      "status": "pending",
+      "status": "done",
       "acceptance": "通过全部 AC-1 ~ AC-12 验收标准",
       "tasks": [
         {
@@ -391,7 +391,7 @@
           "name": "人脸库阈值调优",
           "description": "运行 gallery_health.py 生成相似度矩阵，根据实际分布调整 match_th / reject_th / cross_preset_th，更新 config.yaml",
           "file": ["config/config.yaml"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M7-T5"]
         },
         {
@@ -399,7 +399,7 @@
           "name": "PTZ参数调优",
           "description": "实机测试调整 settle_diff_th / settle_timeout / expand_ratio / capture.timeout / tracking.safe_zone_ratio / correction_settle 等参数，确保稳图判定准确、追踪修正灵敏度合适",
           "file": ["config/config.yaml"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M7-T5"]
         },
         {
@@ -407,7 +407,7 @@
           "name": "全场景验收测试",
           "description": "逐项执行 AC-1~AC-12：无人巡航 / 单人库内 / 单人库外 / 3人同时 / 跨预设位去重 / 4预设位5人全扫 / CAPTURE移动追踪 / 人离开 / 断流恢复 / SDK失败 / 录像 / 库缓存。记录通过/失败并修复",
           "file": [],
-          "status": "pending",
+          "status": "done",
           "depends": ["M8-T1", "M8-T2"]
         },
         {
@@ -415,7 +415,7 @@
           "name": "性能瓶颈分析与优化",
           "description": "检查各环节耗时打点日志，确认：GPU模型推理达标、PTZ机械动作时间合理、单人端到端≤5.5s、4预设位巡航一圈≤20s。若有瓶颈则针对性优化（如调整检测频率、减少不必要的推理等）",
           "file": [],
-          "status": "pending",
+          "status": "done",
           "depends": ["M8-T3"]
         },
         {
@@ -423,7 +423,7 @@
           "name": "requirements.txt 与启动脚本",
           "description": "生成 requirements.txt（onnxruntime-gpu/opencv-python-headless/numpy/pyyaml/scipy/flask/matplotlib），编写 run.sh 设置 LD_LIBRARY_PATH 并启动 python src/main.py，启动后打印 Web 流地址",
           "file": ["requirements.txt", "run.sh"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M8-T3"]
         }
       ]
