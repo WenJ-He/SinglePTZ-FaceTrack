@@ -1,6 +1,7 @@
 """Hikvision PTZ business wrapper."""
 
 import logging
+from ctypes import sizeof
 from typing import Optional, Tuple
 
 from src.sdk.hik_sdk import (
