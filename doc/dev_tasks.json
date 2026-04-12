@@ -9,7 +9,7 @@
       "id": "M1",
       "name": "SDK 打通",
       "description": "海康SDK ctypes绑定 + PTZ业务封装 + 冒烟测试，验证设备连通性和PTZ基本控制能力",
-      "status": "pending",
+      "status": "done",
       "acceptance": "能 login / 读能力集 / goto_preset(1,2,3,4) / zoom_to_bbox / 录像启停",
       "tasks": [
         {
@@ -65,7 +65,7 @@
           "name": "SDK冒烟测试脚本",
           "description": "编写 scripts/test_sdk.py：登录设备 → 打印能力集 → 依次 goto_preset(1,2,3,4) 各等2秒 → 对画面中心发一次 zoom_to_bbox → 启停录像 → 登出。验证所有SDK接口可用",
           "file": ["scripts/test_sdk.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T5", "M1-T6"]
         }
       ]
