@@ -125,7 +125,7 @@
       "id": "M3",
       "name": "识别 + 人脸库",
       "description": "ArcFace嵌入 + 人脸库构建/缓存/匹配 + 库健康度自测",
-      "status": "pending",
+      "status": "done",
       "acceptance": "对 photo/ 自测：正对正余弦 ≥0.6，跨身份 <0.2；库缓存命中后加载 ≤1秒",
       "tasks": [
         {
@@ -133,7 +133,7 @@
           "name": "ArcFace嵌入模块",
           "description": "实现 src/recognize/arcface.py：ArcFace 类，embed(face_bgr) → resize 112×112 → BGR→RGB → (img-127.5)/128.0 → 推理 → L2归一化 → (512,) 向量。embed_batch 批量版本",
           "file": ["src/recognize/arcface.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M2-T2"]
         },
         {
@@ -141,7 +141,7 @@
           "name": "人脸质量检查模块",
           "description": "实现 src/utils/quality.py：quality_ok(face_bgr, min_w=80, ar_lo=0.6, ar_hi=1.6, blur_th=80.0) → bool，检查宽度/长宽比/拉普拉斯清晰度",
           "file": ["src/utils/quality.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T1"]
         },
         {
@@ -149,7 +149,7 @@
           "name": "人脸库管理模块",
           "description": "实现 src/recognize/gallery.py：FaceGallery 类，build_or_load()扫描photo/→检测最大脸→embed→按文件名分组取均值→缓存到cache/gallery.npz（比对mtime决定是否重算），match(feat, match_th, reject_th) → MatchResult(hit/stranger/ambiguous)",
           "file": ["src/recognize/gallery.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M3-T1", "M2-T3", "M3-T2"]
         },
         {
@@ -157,7 +157,7 @@
           "name": "人脸库健康度脚本",
           "description": "实现 scripts/gallery_health.py：加载gallery → 计算 N×N 余弦相似度矩阵 → matplotlib热图 → 打印同人相似度和跨人最大相似度 → 标记异常对(跨人>0.3)。用于评估阈值和检查库质量",
           "file": ["scripts/gallery_health.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M3-T3"]
         }
       ]
