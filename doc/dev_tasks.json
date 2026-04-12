@@ -317,7 +317,7 @@
       "id": "M7",
       "name": "可视化 + 日志 + 输出",
       "description": "MJPEG Web流可视化、事件日志JSONL、陌生人抓拍落盘、录像控制、终端交互",
-      "status": "pending",
+      "status": "done",
       "acceptance": "浏览器访问 http://IP:8080 看到实时标注画面（HUD+bbox+名单+REC）、陌生人抓拍落盘、events.jsonl正确输出",
       "tasks": [
         {
@@ -325,7 +325,7 @@
           "name": "帧标注渲染模块",
           "description": "实现 src/ui/visualizer.py：Visualizer类，render(frame, tracks, state, preset_id, queue_size, fps, is_recording, identified_names) → 返回标注后的np.ndarray。纯CPU OpenCV绘制，不调用imshow。叠加：人脸框+颜色+track_id+姓名/STRANGER、左上HUD、右侧已识别名单、[REC]标识",
           "file": ["src/ui/visualizer.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M5-T5"]
         },
         {
@@ -333,7 +333,7 @@
           "name": "MJPEG Web流服务",
           "description": "实现 src/ui/web_stream.py：MjpegStreamServer类，Flask后台线程。路由：GET / 返回嵌入<img>的HTML页面，GET /stream 返回MJPEG boundary流，POST /api/command 接收控制指令(quit/reset/home/pause/record)。push_frame(annotated)做JPEG编码推入队列（丢老帧保新帧），poll_command()非阻塞取指令",
           "file": ["src/ui/web_stream.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T1"]
         },
         {
@@ -341,7 +341,7 @@
           "name": "显示后端抽象 + stdin交互",
           "description": "实现 src/ui/display.py：DisplayBackend类，根据config.display.mode切换web/opencv后端。统一接口 show(annotated_frame) + poll_command()。web模式下同时支持Flask API指令和终端stdin输入（非阻塞读取，输入q/r/h/p/v+回车）",
           "file": ["src/ui/display.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M7-T2"]
         },
         {
@@ -349,7 +349,7 @@
           "name": "事件日志模块",
           "description": "实现 src/utils/event_logger.py：EventLogger类，log(target, preset_id) 追加到 output/events.jsonl，字段 ts/preset/track_id/result/name/sim/bbox/snapshot。文件追加模式，每行一个JSON对象",
           "file": ["src/utils/event_logger.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T1"]
         },
         {
@@ -357,7 +357,7 @@
           "name": "陌生人抓拍落盘",
           "description": "在 SCAN_RECOGNIZE 判定陌生人后，保存最佳 capture 帧到 output/strangers/{yyyymmdd-HHMMSS}-{trackid}.jpg，snapshot路径写入event log",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M7-T4", "M5-T5"]
         },
         {
@@ -365,7 +365,7 @@
           "name": "录像控制集成",
           "description": "在 _handle_command 中实现 'record'/'v' 切换录像状态，调用 HikPTZ.start_record/stop_record，visualizer渲染 [REC] 标识",
           "file": ["src/scheduler/state_machine.py", "src/ui/visualizer.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M7-T1", "M1-T5"]
         },
         {
@@ -373,7 +373,7 @@
           "name": "Web可视化联调",
           "description": "完整运行系统，浏览器访问 http://IP:8080 验证：实时画面流畅（延迟<500ms）、巡航态HUD正确、扫描态框色正确、已识别名单滚动、POST /api/command 指令响应正常、终端stdin指令正常、陌生人抓拍文件存在、events.jsonl格式正确、录像REC同步",
           "file": [],
-          "status": "pending",
+          "status": "done",
           "depends": ["M7-T1", "M7-T3", "M7-T4", "M7-T5", "M7-T6"]
         }
       ]

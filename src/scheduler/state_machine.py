@@ -22,6 +22,8 @@ from src.recognize.gallery import FaceGallery, MatchResult
 from src.scheduler.capture_tracker import CaptureTracker
 from src.reid.osnet import OSNetReID
 from src.track.sort_reid import Tracker, Track
+from src.ui.visualizer import Visualizer
+from src.ui.display import DisplayBackend
 
 logger = logging.getLogger("app")
 
@@ -67,6 +69,10 @@ class ScanScheduler:
 
         # Global identified persons table (cross-preset dedup)
         self.identified: List[dict] = []  # {track_id, reid_feat, result, name, sim}
+
+        # Visualization
+        self.visualizer = Visualizer()
+        self.display: Optional[DisplayBackend] = None
 
         self.state = State.INIT
         self.stop_flag = False
@@ -147,12 +153,27 @@ class ScanScheduler:
             elif self.state == State.SCAN_NEXT_PRESET:
                 self._handle_scan_next_preset()
 
+            # Render and display
+            self._render_frame(frame)
+
+            # Poll commands
+            cmd = self.display.poll_command() if self.display else None
+            if cmd:
+                self.handle_command(cmd)
+
         logger.info("ScanScheduler stopped")
 
     # ── State handlers ──
 
     def _handle_init(self):
         """Initialization complete, enter patrol."""
+        if self.display is None:
+            self.display = DisplayBackend(
+                mode=self.cfg.display.mode,
+                web_host=self.cfg.display.web_host,
+                web_port=self.cfg.display.web_port,
+                jpeg_quality=self.cfg.display.jpeg_quality,
+            )
         logger.info("INIT -> PATROL_GOTO")
         self.state = State.PATROL_GOTO
 
@@ -448,6 +469,22 @@ class ScanScheduler:
         cv2.imwrite(path, best)
         logger.info(f"  Stranger snapshot saved: {path}")
 
+    def _render_frame(self, frame):
+        """Render annotations and push to display."""
+        tracks = self.tracker.tracks if self.tracker else []
+        identified_names = [p["name"] for p in self.identified]
+
+        annotated = self.visualizer.render(
+            frame, tracks=tracks, state=self.state,
+            preset_id=self.current_scan_preset,
+            queue_size=len(getattr(self, '_scan_queue', [])),
+            fps=self.fps,
+            is_recording=self.is_recording,
+            identified_names=identified_names,
+        )
+        if self.display:
+            self.display.show(annotated)
+
     def _is_already_identified(self, reid_feat: np.ndarray) -> Optional[dict]:
         """Check if a ReID feature matches anyone in the identified table."""
         threshold = self.cfg.reid.cross_preset_th
@@ -526,3 +563,13 @@ class ScanScheduler:
             self.state = State.PATROL_GOTO
             self.patrol_idx = 0
             logger.info("Reset to PATROL")
+        elif cmd in ("v", "record"):
+            if self.is_recording:
+                self.ptz.stop_record()
+                self.is_recording = False
+                logger.info("Recording stopped")
+            else:
+                ok = self.ptz.start_record()
+                if ok:
+                    self.is_recording = True
+                    logger.info("Recording started")
