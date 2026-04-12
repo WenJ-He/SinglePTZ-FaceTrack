@@ -167,7 +167,7 @@
       "id": "M4",
       "name": "巡航 MVP",
       "description": "状态机骨架 + PATROL态（4预设位自动循环检测），不含SCAN态",
-      "status": "pending",
+      "status": "done",
       "acceptance": "4个预设位自动循环，每个停留4秒，检到人脸打日志并标记（但不进入扫描）",
       "tasks": [
         {
@@ -175,7 +175,7 @@
           "name": "状态机骨架与State枚举",
           "description": "实现 src/scheduler/state_machine.py 骨架：State(IntEnum) 12个状态，ScanScheduler 类 __init__ / run 主循环结构 / _handle_key 键盘处理 / _frame_settled 帧差稳图判定",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T5", "M2-T1", "M2-T3"]
         },
         {
@@ -183,7 +183,7 @@
           "name": "PATROL_GOTO + PATROL_DWELL 实现",
           "description": "在状态机中实现 PATROL_GOTO（调用goto_preset + 设settle超时）和 PATROL_DWELL（稳图等待 + 持续1280检测 + min_confirm_frames连续确认 + 停留超时切下一个预设位）",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M4-T1"]
         },
         {
@@ -191,7 +191,7 @@
           "name": "主程序入口",
           "description": "实现 src/main.py：加载config → 设LD_LIBRARY_PATH → HikPTZ.login → check_3d_positioning → 初始化ORT sessions → FaceGallery.build_or_load → RtspSource.start → ScanScheduler.run。含 graceful shutdown（Ctrl+C → logout + cleanup）",
           "file": ["src/main.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M4-T2", "M3-T3"]
         },
         {
@@ -199,7 +199,7 @@
           "name": "巡航联调测试",
           "description": "运行 main.py，验证：4个预设位循环正常、稳图判定正确、检到人脸时日志输出、帧率达标、键盘q退出/h回预设位/space暂停正常",
           "file": [],
-          "status": "pending",
+          "status": "done",
           "depends": ["M4-T3"]
         }
       ]
