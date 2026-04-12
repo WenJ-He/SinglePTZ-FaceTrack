@@ -33,7 +33,7 @@
           "name": "日志模块",
           "description": "实现 src/utils/logger.py：基于 Python logging，按天切分文件（TimedRotatingFileHandler），控制台 + 文件双输出，级别可配",
           "file": ["src/utils/logger.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T2"]
         },
         {
@@ -41,7 +41,7 @@
           "name": "海康SDK ctypes绑定",
           "description": "实现 src/sdk/hik_sdk.py：加载 libhcnetsdk.so（处理 LD_LIBRARY_PATH），声明结构体 NET_DVR_USER_LOGIN_INFO / NET_DVR_DEVICEINFO_V40 / NET_DVR_POINT_FRAME，声明函数签名 Init/Cleanup/Login_V40/Logout/PTZSelZoomIn_EX/PTZPreset_Other/PTZControl_Other/PTZControlWithSpeed_Other/StartDVRRecord/StopDVRRecord/GetDeviceAbility/GetLastError",
           "file": ["src/sdk/hik_sdk.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T1"]
         },
         {
