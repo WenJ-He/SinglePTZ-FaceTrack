@@ -1,8 +1,0 @@
-{
-  "FingerPrintCond": {
-    "searchID": "${searchID}",
-    "employeeNo": "${employeeNo}",
-    "cardReaderNo": 1,
-    "fingerPrintID": 1
-  }
-}

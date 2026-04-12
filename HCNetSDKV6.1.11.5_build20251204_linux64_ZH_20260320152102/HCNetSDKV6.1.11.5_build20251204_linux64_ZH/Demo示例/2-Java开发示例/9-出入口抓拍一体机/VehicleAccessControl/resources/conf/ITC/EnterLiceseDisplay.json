@@ -1,7 +1,0 @@
-{
-  "sence": ${sence},
-  "license": "${license}",
-  "customInfo":  "${customInfo}",
-  "plateType":  "fixedPlate",
-  "enterTime": "${enterTime}"
-}

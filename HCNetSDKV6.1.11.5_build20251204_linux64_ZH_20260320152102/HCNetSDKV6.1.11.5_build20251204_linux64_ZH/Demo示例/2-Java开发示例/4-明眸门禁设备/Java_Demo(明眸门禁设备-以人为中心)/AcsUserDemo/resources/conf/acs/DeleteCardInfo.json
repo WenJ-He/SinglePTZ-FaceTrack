@@ -1,9 +1,0 @@
-{
-  "CardInfoDelCond":{
-    "CardNoList":[
-      {
-        "cardNo":"${cardNo}"
-      }
-    ]
-  }
-}

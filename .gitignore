@@ -19,9 +19,14 @@ output/strangers/
 output/events.jsonl
 logs/*.log
 
-# Model downloads (large files)
+# Model files (too large for GitHub)
+models/facedect/**/*.onnx
+models/facerecognize/*.onnx
 models/person/*.onnx
 models/reid/*.onnx
+
+# SDK large files
+HCNetSDKV6.1.11.5_build20251204_linux64_ZH_20260320152102/
 
 # OS
 .DS_Store

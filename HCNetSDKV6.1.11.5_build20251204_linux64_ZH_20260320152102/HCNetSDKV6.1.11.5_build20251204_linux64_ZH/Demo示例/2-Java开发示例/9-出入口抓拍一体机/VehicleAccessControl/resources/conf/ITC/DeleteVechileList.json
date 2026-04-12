@@ -1,7 +1,0 @@
-{
-  "deleteAllEnabled": false,
-  "CompoundCond": {
-    "plateColor": "${plateColor}",
-    "licensePlate": "${licensePlate}"
-  }
-}

@@ -1,6 +1,0 @@
-<LPListAuditSearchDescription>
-    <maxResults>${maxResults}</maxResults>
-    <searchResultPosition>0</searchResultPosition>
-    <searchID>${searchID}</searchID>
-    <LicensePlate/>
-</LPListAuditSearchDescription>
