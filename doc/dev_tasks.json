@@ -267,7 +267,7 @@
       "id": "M6",
       "name": "多预设位 + ReID",
       "description": "完整4预设位扫描 + SORT跟踪 + OSNet ReID跨预设位去重",
-      "status": "pending",
+      "status": "done",
       "acceptance": "跨预设位不重扫同一人；中途有人离开/进入能正确增删",
       "tasks": [
         {
@@ -275,7 +275,7 @@
           "name": "OSNet ReID模块",
           "description": "实现 src/reid/osnet.py：OSNetReID 类，embed(person_bgr) → resize(128,256) → ImageNet归一化 → 推理 → L2归一化 → (512,) 向量。需下载 osnet_x0_25.onnx 到 models/reid/",
           "file": ["src/reid/osnet.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M2-T2"]
         },
         {
@@ -283,7 +283,7 @@
           "name": "SORT+ReID Tracker模块",
           "description": "实现 src/track/sort_reid.py：Tracker类，Kalman+Hungarian匹配（代价=α*IoU距离+β*ReID距离），Track的reid_feat EMA更新(权重0.1)，snapshot_before_move/restore_after_move 跨zoom状态切换时的身份恢复",
           "file": ["src/track/sort_reid.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M6-T1"]
         },
         {
@@ -291,7 +291,7 @@
           "name": "全局已识别表 + 跨预设位去重",
           "description": "在状态机中实现 IdentifiedPerson 全局表 + is_already_identified(reid_feat, threshold=0.5)。在 SCAN_DETECT 阶段对每个PENDING track查全局表，命中则直接复用结果跳过扫描",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M6-T2", "M5-T1"]
         },
         {
@@ -299,7 +299,7 @@
           "name": "SCAN_NEXT_PRESET 实现",
           "description": "状态机中实现：当前预设位扫描队列空 → SCAN_NEXT_PRESET → 若scan_preset_queue还有 → tracker.snapshot_before_move → SCAN_GOTO_PRESET下一个；若4个全扫完 → 清空identified + tracker.reset → 回PATROL_GOTO",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M6-T3"]
         },
         {
@@ -307,7 +307,7 @@
           "name": "多预设位+ReID联调",
           "description": "让同一人站在两个预设位重叠区域，验证不被重扫。在4个预设位分散5人，验证全扫一轮≤45秒。测试中途有人离开/新人进入的场景",
           "file": [],
-          "status": "pending",
+          "status": "done",
           "depends": ["M6-T4"]
         }
       ]

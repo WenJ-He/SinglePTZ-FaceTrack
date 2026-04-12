@@ -20,6 +20,8 @@ from src.detect.yolo_person import YoloPerson
 from src.recognize.arcface import ArcFace
 from src.recognize.gallery import FaceGallery, MatchResult
 from src.scheduler.capture_tracker import CaptureTracker
+from src.reid.osnet import OSNetReID
+from src.track.sort_reid import Tracker, Track
 
 logger = logging.getLogger("app")
 
@@ -46,7 +48,8 @@ class ScanScheduler:
                  face_wide: YoloFace, face_close: YoloFace,
                  person_det: Optional[YoloPerson] = None,
                  arcface: Optional[ArcFace] = None,
-                 gallery: Optional[FaceGallery] = None):
+                 gallery: Optional[FaceGallery] = None,
+                 reid: Optional[OSNetReID] = None):
         self.cfg = cfg
         self.ptz = ptz
         self.video = video
@@ -55,6 +58,15 @@ class ScanScheduler:
         self.person_det = person_det
         self.arcface = arcface
         self.gallery = gallery
+
+        # Tracker + ReID
+        self.reid = reid
+        self.tracker: Optional[Tracker] = None
+        if reid is not None:
+            self.tracker = Tracker(cfg.track, reid)
+
+        # Global identified persons table (cross-preset dedup)
+        self.identified: List[dict] = []  # {track_id, reid_feat, result, name, sim}
 
         self.state = State.INIT
         self.stop_flag = False
@@ -213,21 +225,45 @@ class ScanScheduler:
         self.state = State.SCAN_DETECT
 
     def _handle_scan_detect(self, frame):
-        """Detect faces and build scan queue."""
+        """Detect faces, run tracker, do cross-preset dedup."""
         if not self._frame_settled(frame) and time.time() < self.settle_deadline:
             return
 
         logger.info("SCAN_DETECT: running detection")
         dets = self.face_wide.detect(frame)
 
+        # Run tracker
+        now = time.time()
+        if self.tracker is not None:
+            self.tracker.update(frame, dets, timestamp=now)
+
+            # Cross-preset dedup: check each track against identified table
+            scan_dets = []
+            for track in self.tracker.tracks:
+                if track.reid_feat is not None:
+                    matched = self._is_already_identified(track.reid_feat)
+                    if matched:
+                        logger.info(
+                            f"  Track {track.track_id} already identified "
+                            f"as '{matched['name']}', skipping"
+                        )
+                        continue
+                # Find corresponding detection
+                for det in dets:
+                    if self._bbox_overlap(det.bbox, track.bbox) > 0.3:
+                        scan_dets.append(det)
+                        break
+        else:
+            scan_dets = dets
+
         # Sort by area descending, then left-to-right
-        dets.sort(key=lambda d: (
+        scan_dets.sort(key=lambda d: (
             -(d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]),
             d.bbox[0],
         ))
 
-        self._scan_queue = dets
-        logger.info(f"  Found {len(dets)} faces in scan queue")
+        self._scan_queue = scan_dets
+        logger.info(f"  {len(dets)} detected, {len(scan_dets)} to scan after dedup")
         self.state = State.SCAN_PICK
 
     def _handle_scan_pick(self, frame):
@@ -343,6 +379,9 @@ class ScanScheduler:
 
             # Log event
             self._log_event(result, name)
+
+            # Add to identified table
+            self._add_identified(result, name)
         else:
             logger.info("  No captures or recognizer not available")
 
@@ -364,11 +403,16 @@ class ScanScheduler:
         """Move to next preset in scan queue."""
         if self.scan_preset_queue:
             self.current_scan_preset = self.scan_preset_queue.popleft()
+            if self.tracker is not None:
+                self.tracker.snapshot_before_move()
             logger.info(f"SCAN_NEXT_PRESET: moving to {self.current_scan_preset}")
             self.state = State.SCAN_GOTO_PRESET
         else:
             logger.info("All presets scanned, returning to PATROL")
             self.current_scan_preset = None
+            self.identified.clear()
+            if self.tracker is not None:
+                self.tracker.reset()
             self.state = State.PATROL_GOTO
 
     def _log_event(self, result: MatchResult, name: str):
@@ -403,6 +447,40 @@ class ScanScheduler:
         )
         cv2.imwrite(path, best)
         logger.info(f"  Stranger snapshot saved: {path}")
+
+    def _is_already_identified(self, reid_feat: np.ndarray) -> Optional[dict]:
+        """Check if a ReID feature matches anyone in the identified table."""
+        threshold = self.cfg.reid.cross_preset_th
+        best = None
+        best_sim = 0.0
+        for person in self.identified:
+            sim = float(np.dot(reid_feat, person["reid_feat"]))
+            if sim > threshold and sim > best_sim:
+                best_sim = sim
+                best = person
+        return best
+
+    def _add_identified(self, result: MatchResult, name: str):
+        """Add recognized person to global identified table."""
+        # Get reid_feat from tracker if available
+        reid_feat = None
+        if self.tracker is not None:
+            for track in self.tracker.tracks:
+                if track.reid_feat is not None:
+                    reid_feat = track.reid_feat
+                    break
+
+        if reid_feat is not None:
+            self.identified.append({
+                "name": name,
+                "reid_feat": reid_feat,
+                "result": result.kind,
+                "sim": result.sim,
+            })
+
+    def _bbox_overlap(self, a, b) -> float:
+        """Quick IoU check between two bboxes."""
+        return iou(a, b)
 
     # ── Helpers ──
 

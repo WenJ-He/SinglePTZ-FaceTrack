@@ -20,6 +20,7 @@ from src.detect.yolo_face import YoloFace
 from src.detect.yolo_person import YoloPerson
 from src.recognize.arcface import ArcFace
 from src.recognize.gallery import FaceGallery
+from src.reid.osnet import OSNetReID
 from src.scheduler.state_machine import ScanScheduler
 
 
@@ -78,6 +79,9 @@ def main():
         gallery = FaceGallery(arcface, face_det_for_gallery, "cache/gallery.npz")
         gallery.build_or_load("photo")
 
+        # Init ReID
+        reid = OSNetReID(cfg.models.reid, providers=providers)
+
         # Start RTSP
         video = RtspSource(cfg.hik.rtsp_url)
         video.start()
@@ -99,7 +103,7 @@ def main():
         # Init scheduler
         scheduler = ScanScheduler(
             cfg, ptz, video, face_wide, face_close, person_det,
-            arcface=arcface, gallery=gallery,
+            arcface=arcface, gallery=gallery, reid=reid,
         )
 
         # Graceful shutdown
