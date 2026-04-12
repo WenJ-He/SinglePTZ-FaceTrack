@@ -49,7 +49,7 @@
           "name": "PTZ业务封装",
           "description": "实现 src/sdk/hik_ptz.py：HikPTZ 类，封装 login/logout/check_3d_positioning(XML解析<PTZZoomIn>)/goto_preset/zoom_to_bbox(含外扩+归一化0~255)/start_record/stop_record，所有SDK调用失败时打印 GetLastError 错误码",
           "file": ["src/sdk/hik_ptz.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T4"]
         },
         {
@@ -57,7 +57,7 @@
           "name": "geometry工具函数",
           "description": "实现 src/utils/geometry.py：bbox_expand(bbox, ratio, frame_w, frame_h) 外扩并clip到边界，bbox_to_point_frame(bbox, frame_w, frame_h) 转归一化0~255坐标，bbox_center/bbox_area 等辅助函数",
           "file": ["src/utils/geometry.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T1"]
         },
         {
