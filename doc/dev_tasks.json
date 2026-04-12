@@ -75,7 +75,7 @@
       "id": "M2",
       "name": "取流 + 检测",
       "description": "RTSP取流 + YOLO11n人脸检测 + YOLOv8n人体检测，OpenCV窗口实时画框验证",
-      "status": "pending",
+      "status": "done",
       "acceptance": "OpenCV 窗口里看到 1280 模型稳定框出全景所有脸 + 人体框",
       "tasks": [
         {
@@ -99,7 +99,7 @@
           "name": "YOLO人脸检测模块",
           "description": "实现 src/detect/yolo_face.py：YoloFace 类，支持 640/1280 两种输入。实现 letterbox 保持长宽比缩放、推理、转置(N,5)→置信度过滤→cxcywh→xyxy→NMS(cv2.dnn.NMSBoxes)→反letterbox映射回原图坐标。返回 List[Detection]",
           "file": ["src/detect/yolo_face.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M2-T2"]
         },
         {
@@ -107,7 +107,7 @@
           "name": "YOLO人体检测模块",
           "description": "实现 src/detect/yolo_person.py：YoloPerson 类，复用 YoloFace 同款后处理逻辑，但 cls 过滤只保留 class_id==0(person)。需要先下载 YOLOv8n COCO ONNX 权重到 models/person/",
           "file": ["src/detect/yolo_person.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M2-T3"]
         },
         {
@@ -115,7 +115,7 @@
           "name": "检测可视化验证脚本",
           "description": "编写 scripts/test_detect.py：取RTSP流 → 1280人脸检测 + 人体检测 → OpenCV窗口实时画人脸框(绿)+人体框(蓝)+置信度+FPS → 按q退出。验证检测模型在4MP画面上的效果和帧率",
           "file": ["scripts/test_detect.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M2-T1", "M2-T3", "M2-T4"]
         }
       ]
