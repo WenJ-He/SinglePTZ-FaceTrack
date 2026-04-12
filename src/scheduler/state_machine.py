@@ -24,6 +24,7 @@ from src.reid.osnet import OSNetReID
 from src.track.sort_reid import Tracker, Track
 from src.ui.visualizer import Visualizer
 from src.ui.display import DisplayBackend
+from src.utils.geometry import iou
 
 logger = logging.getLogger("app")
 

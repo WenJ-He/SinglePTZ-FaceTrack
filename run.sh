@@ -20,7 +20,7 @@ echo "============================================"
 echo "SinglePTZ-FaceTrack"
 echo "============================================"
 echo ""
-echo "Web stream: http://0.0.0.0:8080/"
+echo "Web stream: http://0.0.0.0:18080/"
 echo "Commands: q=quit r=reset h=home p=pause v=record"
 echo ""
 
