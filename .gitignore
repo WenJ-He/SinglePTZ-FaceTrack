@@ -1,0 +1,32 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache & output
+cache/gallery.npz
+output/strangers/
+output/events.jsonl
+logs/*.log
+
+# Model downloads (large files)
+models/person/*.onnx
+models/reid/*.onnx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Conda / venv
+.env
+venv/

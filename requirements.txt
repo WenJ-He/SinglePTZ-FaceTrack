@@ -1,0 +1,16 @@
+# Core
+pyyaml>=6.0
+numpy>=1.24
+opencv-python-headless>=4.8
+
+# ONNX Runtime (use -gpu version if CUDA available)
+onnxruntime>=1.16
+
+# Tracking
+scipy>=1.11
+
+# Web display
+flask>=3.0
+
+# Gallery health script
+matplotlib>=3.7
