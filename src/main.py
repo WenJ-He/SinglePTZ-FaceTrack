@@ -52,10 +52,12 @@ def main():
         ptz.login()
 
         # Check 3D positioning
-        if not ptz.check_3d_positioning():
-            logger.error("Device does not support 3D positioning. Cannot continue.")
-            ptz.logout()
-            return
+        has_3d = ptz.check_3d_positioning()
+        if not has_3d:
+            logger.warning(
+                "Device may not support 3D positioning (PTZZoomIn). "
+                "Continuing anyway; zoom calls will fail gracefully."
+            )
 
         # Init detectors
         face_wide = YoloFace(cfg.models.face_wide, input_size=1280,

@@ -67,23 +67,51 @@ class HikPTZ:
         self.sdk.sdk.NET_DVR_Cleanup()
 
     def check_3d_positioning(self) -> bool:
-        """Check if device supports 3D positioning (PTZZoomIn)."""
-        in_buf = b"<DeviceAbility>\r\n</DeviceAbility>"
-        out_buf = (c_char * 8192)()
-        ok = self.sdk.sdk.NET_DVR_GetDeviceAbility(
-            self.user_id, self.DEVICE_ABILITY_INFO,
-            in_buf, len(in_buf),
-            out_buf, sizeof(out_buf),
-        )
-        if not ok:
-            err = self.sdk.sdk.NET_DVR_GetLastError()
-            logger.error(f"GetDeviceAbility failed, error={err}")
+        """Check if device supports 3D positioning (PTZZoomIn).
+
+        Tries multiple input XML formats for DEVICE_ABILITY_INFO(0x011).
+        Returns True if PTZZoomIn is found in any response.
+        If ability query fails entirely, returns True with a warning
+        (device likely supports it, and actual calls will fail gracefully).
+        """
+        # Input XML formats to try (different SDK versions expect different formats)
+        input_formats = [
+            b"<PTZAbility></PTZAbility>",
+            b"<DeviceAbility><PTZAbility></PTZAbility></DeviceAbility>",
+            b"<DeviceAbility>\r\n</DeviceAbility>",
+        ]
+
+        for in_buf in input_formats:
+            out_buf = (c_char * 65536)()
+            ok = self.sdk.sdk.NET_DVR_GetDeviceAbility(
+                self.user_id, self.DEVICE_ABILITY_INFO,
+                in_buf, len(in_buf),
+                out_buf, sizeof(out_buf),
+            )
+            if not ok:
+                err = self.sdk.sdk.NET_DVR_GetLastError()
+                logger.debug(
+                    f"GetDeviceAbility with '{in_buf.decode()}' failed, "
+                    f"error={err}"
+                )
+                continue
+
+            result = out_buf.value.decode("utf-8", errors="replace")
+            has_zoom = "<PTZZoomIn>" in result or "<PTZZoomIn/>" in result
+            logger.info(f"3D positioning (PTZZoomIn) supported: {has_zoom}")
+            if has_zoom:
+                return True
+            # Got a valid response but no PTZZoomIn
+            logger.warning(f"Ability response (no PTZZoomIn): {result[:500]}")
             return False
 
-        result = out_buf.value.decode("utf-8", errors="replace")
-        has_zoom = "<PTZZoomIn>" in result
-        logger.info(f"3D positioning (PTZZoomIn) supported: {has_zoom}")
-        return has_zoom
+        # All ability queries failed - warn but continue
+        logger.warning(
+            "GetDeviceAbility failed for all input formats. "
+            "Assuming 3D positioning is supported; actual PTZSelZoomIn_EX "
+            "calls will fail gracefully if not."
+        )
+        return True
 
     def goto_preset(self, preset_id: int) -> bool:
         """Move PTZ to a preset position."""

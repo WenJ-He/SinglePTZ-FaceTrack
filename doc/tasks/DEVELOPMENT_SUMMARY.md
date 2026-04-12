@@ -1,10 +1,10 @@
-# SinglePTZ-FaceTrack Development Summary
+# SinglePTZ-FaceTrack 开发总结
 
-## Status: All 8 Milestones Complete (43/43 tasks)
+## 状态：全部8个里程碑完成（43/43任务）
 
-### Milestones Completed
+### 已完成里程碑
 
-| Milestone | Name | Tasks | Commit |
+| 里程碑 | 名称 | 任务数 | 提交 |
 |---|---|---|---|
 | M1 | SDK 打通 | 7/7 | c03dd69 ~ 806e028 |
 | M2 | 取流 + 检测 | 5/5 | 32ee143 ~ a437ccc |
@@ -15,52 +15,52 @@
 | M7 | 可视化 + 日志 | 7/7 | c2fba9e |
 | M8 | 调优 & 验收 | 5/5 | 1467df4 |
 
-### Key Files Created
+### 创建的关键文件
 
 ```
 src/
-├── config.py                    # YAML -> dataclass mapping
-├── main.py                      # Entry point
+├── config.py                    # YAML → dataclass 配置映射
+├── main.py                      # 程序入口
 ├── sdk/
-│   ├── hik_sdk.py               # Hikvision SDK ctypes bindings
-│   └── hik_ptz.py               # PTZ business wrapper
+│   ├── hik_sdk.py               # 海康SDK ctypes绑定
+│   └── hik_ptz.py               # PTZ业务封装
 ├── video/
-│   └── rtsp_source.py           # RTSP background thread
+│   └── rtsp_source.py           # RTSP后台取流
 ├── detect/
-│   ├── yolo_face.py             # YOLO11n face detection (640/1280)
-│   └── yolo_person.py           # YOLOv8n person detection
+│   ├── yolo_face.py             # YOLO11n 人脸检测（640/1280）
+│   └── yolo_person.py           # YOLOv8n 人体检测
 ├── recognize/
-│   ├── arcface.py               # ArcFace 512-d embedding
-│   └── gallery.py               # Face gallery build/cache/match
+│   ├── arcface.py               # ArcFace 512-d 嵌入
+│   └── gallery.py               # 人脸库构建/缓存/匹配
 ├── reid/
-│   └── osnet.py                 # OSNet ReID 512-d embedding
+│   └── osnet.py                 # OSNet ReID 512-d 嵌入
 ├── track/
-│   └── sort_reid.py             # SORT+ReID tracker
+│   └── sort_reid.py             # SORT+ReID 跟踪器
 ├── scheduler/
-│   ├── state_machine.py         # 12-state scan scheduler
-│   └── capture_tracker.py       # B+C dynamic tracking correction
+│   ├── state_machine.py         # 12态扫描调度器
+│   └── capture_tracker.py       # B+C动态追踪修正
 ├── ui/
-│   ├── visualizer.py            # Frame annotation renderer
-│   ├── web_stream.py            # Flask MJPEG HTTP stream
-│   └── display.py               # Display backend abstraction
+│   ├── visualizer.py            # 帧标注渲染
+│   ├── web_stream.py            # Flask MJPEG HTTP流
+│   └── display.py               # 显示后端抽象
 └── utils/
-    ├── logger.py                # Logging module
-    ├── geometry.py              # Bbox/IOU utilities
-    ├── quality.py               # Face quality checks
-    └── event_logger.py          # JSONL event logger
+    ├── logger.py                # 日志模块
+    ├── geometry.py              # Bbox/IoU工具函数
+    ├── quality.py               # 人脸质量检查
+    └── event_logger.py          # JSONL事件日志
 ```
 
-### Notes for Real Device Testing
+### 实机测试注意事项
 
-1. **Gallery thresholds**: Cross-person similarity max=0.51, so match_th=0.35 may need raising to 0.55+
-2. **OSNet model**: Currently uses random weights (no pretrained available offline). Need pretrained osnet_x0_25 weights for production ReID.
-3. **Git push**: Network unavailable during development. Push manually when network is available:
+1. **人脸库阈值**：跨人相似度最大值=0.51，match_th=0.35 可能需要上调至 0.55+
+2. **OSNet模型**：当前使用随机权重（离线环境无法下载预训练），需替换为预训练 osnet_x0_25 权重
+3. **Git推送**：开发期间网络不可用，需手动推送：
    ```bash
    git push -u origin main
    ```
 
-### Environment
+### 运行环境
 
-- Conda env: `single_ptz_facetrack` (Python 3.10)
-- Start: `./run.sh` or `conda activate single_ptz_facetrack && python src/main.py`
-- Web stream: http://0.0.0.0:8080/
+- Conda 环境：`single_ptz_facetrack`（Python 3.10）
+- 启动方式：`./run.sh` 或 `conda activate single_ptz_facetrack && python src/main.py`
+- Web流地址：http://0.0.0.0:8080/
