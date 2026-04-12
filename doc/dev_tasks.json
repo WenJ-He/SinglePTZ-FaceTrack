@@ -83,7 +83,7 @@
           "name": "RTSP取流模块",
           "description": "实现 src/video/rtsp_source.py：RtspSource 类，后台线程 grab+retrieve 最新帧缓存（丢老帧保新帧），支持断流自动重连（间隔2s，最多12次），read() 返回最新帧或 None，线程安全锁",
           "file": ["src/video/rtsp_source.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T2"]
         },
         {
@@ -91,7 +91,7 @@
           "name": "ORT provider自动选择",
           "description": "在 src/config.py 或 src/utils/ 中实现 auto_providers() 函数：检测 CUDAExecutionProvider 是否可用，可用则返回 ['CUDAExecutionProvider','CPUExecutionProvider']，否则 fallback CPU 并打 INFO 日志",
           "file": ["src/config.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M1-T3"]
         },
         {

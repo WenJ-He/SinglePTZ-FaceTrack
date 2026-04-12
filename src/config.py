@@ -155,3 +155,20 @@ def load_config(path: str = "config/config.yaml") -> AppConfig:
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     return _dict_to_dataclass(AppConfig, raw) if raw else AppConfig()
+
+
+def auto_providers(prefer_gpu: bool = True):
+    """Detect available ONNX Runtime execution providers.
+
+    Returns list of providers to try, preferring CUDA if available.
+    """
+    import onnxruntime as ort
+    available = ort.get_available_providers()
+    if prefer_gpu and "CUDAExecutionProvider" in available:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if prefer_gpu:
+        import logging
+        logging.getLogger("app").info(
+            "CUDAExecutionProvider not available, falling back to CPU"
+        )
+    return ["CPUExecutionProvider"]
