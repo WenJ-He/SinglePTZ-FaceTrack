@@ -209,7 +209,7 @@
       "id": "M5",
       "name": "单预设位扫描",
       "description": "状态机SCAN态完整流程（单预设位内）：ZOOM_IN→SETTLE→CAPTURE→RECOGNIZE→ZOOM_OUT，含追踪修正",
-      "status": "pending",
+      "status": "done",
       "acceptance": "单预设位下2人：自动逐个放大→识别→回位，命中显示姓名，陌生人标红",
       "tasks": [
         {
@@ -217,7 +217,7 @@
           "name": "SCAN_GOTO_PRESET + SCAN_DETECT 实现",
           "description": "状态机中实现：PATROL_DWELL发现人脸后 → 生成scan_preset_queue → SCAN_GOTO_PRESET(goto_preset+稳图) → SCAN_DETECT(1280检测+person检测+建扫描队列，按面积desc+x asc排序)",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M4-T2"]
         },
         {
@@ -225,7 +225,7 @@
           "name": "SCAN_PICK + SCAN_ZOOM_IN + SCAN_SETTLE 实现",
           "description": "状态机中实现：从扫描队列取PENDING目标 → zoom_to_bbox(expand=2.0) → 等稳图（帧差法 + 1.5s超时）。处理SDK失败时跳过目标",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M5-T1"]
         },
         {
@@ -233,7 +233,7 @@
           "name": "CaptureTracker 动态追踪修正模块",
           "description": "实现 src/scheduler/capture_tracker.py：CaptureTracker 类，step(frame) 每帧决策（collect/correct/settling/giveup/none），含安全区/危险区判定、3D重定位修正(max 3次)、Kalman滤波器(4维cx,cy,vx,vy)预测、丢失超时(500ms Kalman / 1200ms放弃)",
           "file": ["src/scheduler/capture_tracker.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M2-T3", "M1-T6"]
         },
         {
@@ -241,7 +241,7 @@
           "name": "SCAN_CAPTURE 实现（集成CaptureTracker）",
           "description": "状态机中实现 SCAN_CAPTURE：初始化CaptureTracker → 每帧调step → collect时采集face crop → correct时zoom_to_bbox重定位 → settling等0.5s → giveup时标DONE_UNRECOGNIZED → 采够min_samples或超时4s进RECOGNIZE",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M5-T2", "M5-T3"]
         },
         {
@@ -249,7 +249,7 @@
           "name": "SCAN_RECOGNIZE + SCAN_ZOOM_OUT 实现",
           "description": "状态机中实现：多帧ArcFace embed取均值归一化 → gallery.match → 命中/陌生/模糊判定 → 更新target状态 → SCAN_ZOOM_OUT(goto_preset回当前预设位+稳图) → 回SCAN_PICK继续下一人",
           "file": ["src/scheduler/state_machine.py"],
-          "status": "pending",
+          "status": "done",
           "depends": ["M5-T4", "M3-T3"]
         },
         {
@@ -257,7 +257,7 @@
           "name": "单预设位扫描联调",
           "description": "在一个预设位下放2-3人，验证：自动逐个zoom in → 采集 → 识别 → zoom out → 下一个人。验证追踪修正（让人移动），验证陌生人判定，验证超时放弃",
           "file": [],
-          "status": "pending",
+          "status": "done",
           "depends": ["M5-T5"]
         }
       ]

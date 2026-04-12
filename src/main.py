@@ -99,6 +99,7 @@ def main():
         # Init scheduler
         scheduler = ScanScheduler(
             cfg, ptz, video, face_wide, face_close, person_det,
+            arcface=arcface, gallery=gallery,
         )
 
         # Graceful shutdown

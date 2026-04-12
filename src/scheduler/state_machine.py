@@ -1,8 +1,11 @@
 """Scan scheduler state machine: PATROL + SCAN modes."""
 
+import json
 import logging
+import os
 import time
 from collections import deque
+from datetime import datetime
 from enum import IntEnum
 from typing import List, Optional, Deque
 
@@ -14,6 +17,9 @@ from src.sdk.hik_ptz import HikPTZ
 from src.video.rtsp_source import RtspSource
 from src.detect.yolo_face import YoloFace, Detection
 from src.detect.yolo_person import YoloPerson
+from src.recognize.arcface import ArcFace
+from src.recognize.gallery import FaceGallery, MatchResult
+from src.scheduler.capture_tracker import CaptureTracker
 
 logger = logging.getLogger("app")
 
@@ -38,13 +44,17 @@ class ScanScheduler:
 
     def __init__(self, cfg: AppConfig, ptz: HikPTZ, video: RtspSource,
                  face_wide: YoloFace, face_close: YoloFace,
-                 person_det: Optional[YoloPerson] = None):
+                 person_det: Optional[YoloPerson] = None,
+                 arcface: Optional[ArcFace] = None,
+                 gallery: Optional[FaceGallery] = None):
         self.cfg = cfg
         self.ptz = ptz
         self.video = video
         self.face_wide = face_wide
         self.face_close = face_close
         self.person_det = person_det
+        self.arcface = arcface
+        self.gallery = gallery
 
         self.state = State.INIT
         self.stop_flag = False
@@ -60,9 +70,14 @@ class ScanScheduler:
         # Scan state
         self.scan_preset_queue: Deque[int] = deque()
         self.current_scan_preset: Optional[int] = None
-        self.target = None  # Current target being scanned
+        self.target = None  # Current target Detection being scanned
+        self.target_bbox = None  # bbox of target
         self.capture_buf: List[np.ndarray] = []
         self.capture_deadline = 0.0
+        self.capture_tracker: Optional[CaptureTracker] = None
+
+        # Event log
+        self._event_count = 0
 
         # Face confirmation (for patrol)
         self._face_confirm_count = 0
@@ -250,51 +265,91 @@ class ScanScheduler:
         logger.info("SCAN_SETTLE: frame settled, entering CAPTURE")
         self.capture_buf = []
         self.capture_deadline = time.time() + self.cfg.capture.timeout
+        self.capture_tracker = None
+        if self.target is not None:
+            self.target_bbox = self.target.bbox
         self.state = State.SCAN_CAPTURE
 
     def _handle_scan_capture(self, frame):
-        """Capture face images. (Basic version without CaptureTracker)"""
+        """Capture face images with CaptureTracker dynamic correction."""
         if time.time() > self.capture_deadline:
             logger.info("SCAN_CAPTURE: timeout")
             self.state = State.SCAN_RECOGNIZE
             return
 
-        dets = self.face_close.detect(frame)
-        if not dets:
+        # Initialize capture tracker on first frame
+        if self.capture_tracker is None:
+            self.capture_tracker = CaptureTracker(
+                self.face_close, self.cfg.capture.tracking,
+            )
+            # Prime it with the target bbox if available
+            if self.target_bbox is not None:
+                self.capture_tracker.last_face_bbox = self.target_bbox
+
+        action = self.capture_tracker.step(frame)
+
+        if action.type == "collect":
+            self.capture_buf.append(action.face_crop)
+            logger.debug(f"  Captured face #{len(self.capture_buf)}")
+        elif action.type == "correct":
+            # Layer B: 3D re-positioning
+            logger.info(f"  Correction #{self.capture_tracker.correction_count}")
+            ok = self.ptz.zoom_to_bbox(
+                action.corrected_bbox, frame.shape[1], frame.shape[0],
+                expand=self.cfg.ptz.expand_ratio,
+            )
+            if ok:
+                self.capture_tracker.enter_correction_settle()
+            else:
+                logger.warning("  Correction zoom failed")
+        elif action.type == "giveup":
+            logger.info("SCAN_CAPTURE: target lost, giving up")
+            self.state = State.SCAN_ZOOM_OUT
             return
 
-        # Pick center-most and largest
-        fh, fw = frame.shape[:2]
-        best = min(dets, key=lambda d: (
-            ((d.bbox[0] + d.bbox[2]) / 2 - fw / 2) ** 2 +
-            ((d.bbox[1] + d.bbox[3]) / 2 - fh / 2) ** 2
-        ))
-
-        x1, y1, x2, y2 = best.bbox
-        # Expand slightly
-        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        bw, bh = (x2 - x1) * 1.3, (y2 - y1) * 1.3
-        x1e = max(int(cx - bw / 2), 0)
-        y1e = max(int(cy - bh / 2), 0)
-        x2e = min(int(cx + bw / 2), fw)
-        y2e = min(int(cy + bh / 2), fh)
-
-        crop = frame[y1e:y2e, x1e:x2e]
-        if crop.size > 0:
-            from src.utils.quality import quality_ok
-            if quality_ok(crop):
-                self.capture_buf.append(crop)
-                logger.debug(f"  Captured face #{len(self.capture_buf)}")
-
-        if len(self.capture_buf) >= self.cfg.capture.max_samples:
+        if len(self.capture_buf) >= self.cfg.capture.min_samples:
             self.state = State.SCAN_RECOGNIZE
 
     def _handle_scan_recognize(self):
-        """Recognize captured faces. Placeholder - will be enhanced in M5."""
-        logger.info(
-            f"SCAN_RECOGNIZE: {len(self.capture_buf)} captures"
-        )
+        """Recognize captured faces using ArcFace + Gallery."""
+        logger.info(f"SCAN_RECOGNIZE: {len(self.capture_buf)} captures")
+
+        if self.capture_buf and self.arcface and self.gallery:
+            # Embed all captures
+            feats = [self.arcface.embed(f) for f in self.capture_buf]
+            mean_feat = np.mean(feats, axis=0)
+            mean_feat /= (np.linalg.norm(mean_feat) + 1e-9)
+
+            # Match against gallery
+            result = self.gallery.match(
+                mean_feat,
+                match_th=self.cfg.recognize.match_th,
+                reject_th=self.cfg.recognize.reject_th,
+            )
+
+            # Determine final result
+            if result.kind == "hit":
+                name = result.name
+                logger.info(f"  HIT: {name} (sim={result.sim:.4f})")
+            elif result.kind == "stranger":
+                name = "STRANGER"
+                logger.info(f"  STRANGER (best_sim={result.sim:.4f})")
+                # Save stranger snapshot
+                self._save_stranger_snapshot()
+            else:
+                # Ambiguous - use top1 as fallback
+                name = result.name or "UNKNOWN"
+                logger.info(f"  AMBIGUOUS: {name} (sim={result.sim:.4f})")
+
+            # Log event
+            self._log_event(result, name)
+        else:
+            logger.info("  No captures or recognizer not available")
+
+        # Reset capture state
+        self.capture_tracker = None
         self.target = None
+        self.target_bbox = None
         self.state = State.SCAN_ZOOM_OUT
 
     def _handle_scan_zoom_out(self, frame):
@@ -315,6 +370,39 @@ class ScanScheduler:
             logger.info("All presets scanned, returning to PATROL")
             self.current_scan_preset = None
             self.state = State.PATROL_GOTO
+
+    def _log_event(self, result: MatchResult, name: str):
+        """Append recognition event to events.jsonl."""
+        os.makedirs(os.path.dirname(self.cfg.output.events_jsonl) or ".", exist_ok=True)
+        self._event_count += 1
+        event = {
+            "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "preset": self.current_scan_preset,
+            "event_id": self._event_count,
+            "result": result.kind,
+            "name": name,
+            "sim": round(result.sim, 4),
+        }
+        if self.target_bbox:
+            event["bbox"] = list(self.target_bbox)
+
+        with open(self.cfg.output.events_jsonl, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    def _save_stranger_snapshot(self):
+        """Save best capture frame for stranger."""
+        if not self.capture_buf:
+            return
+        os.makedirs(self.cfg.output.strangers_dir, exist_ok=True)
+        # Save the last (hopefully best quality) capture
+        best = max(self.capture_buf, key=lambda c: c.shape[0])
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = os.path.join(
+            self.cfg.output.strangers_dir,
+            f"{ts}-{self._event_count}.jpg",
+        )
+        cv2.imwrite(path, best)
+        logger.info(f"  Stranger snapshot saved: {path}")
 
     # ── Helpers ──
 
