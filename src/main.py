@@ -22,6 +22,7 @@ from src.recognize.arcface import ArcFace
 from src.recognize.gallery import FaceGallery
 from src.reid.osnet import OSNetReID
 from src.scheduler.state_machine import ScanScheduler
+from src.sdk.hik_isapi import HikISAPI
 
 
 def main():
@@ -102,10 +103,17 @@ def main():
             ptz.logout()
             return
 
+        # Init ISAPI for high-quality capture (optional)
+        isapi = None
+        if cfg.hik.isapi_enabled:
+            isapi = HikISAPI(cfg.hik.ip, cfg.hik.user, cfg.hik.password,
+                             cfg.hik.channel)
+            logger.info("ISAPI high-quality capture enabled")
+
         # Init scheduler
         scheduler = ScanScheduler(
             cfg, ptz, video, face_wide, face_close, person_det,
-            arcface=arcface, gallery=gallery, reid=reid,
+            arcface=arcface, gallery=gallery, reid=reid, isapi=isapi,
         )
 
         # Graceful shutdown

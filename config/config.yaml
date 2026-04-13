@@ -6,6 +6,7 @@ hik:
   channel: 1
   rtsp_url: "rtsp://admin:vision123456@192.168.0.249:554/Streaming/Channels/101"
   sdk_lib_dir: "HCNetSDKV6.1.11.5_build20251204_linux64_ZH_20260320152102/HCNetSDKV6.1.11.5_build20251204_linux64_ZH/库文件"
+  isapi_enabled: true
 
 patrol:
   presets: [1, 2, 3, 4]

@@ -14,6 +14,7 @@ class HikConfig:
     channel: int = 1
     rtsp_url: str = ""
     sdk_lib_dir: str = ""
+    isapi_enabled: bool = True
 
 
 @dataclass

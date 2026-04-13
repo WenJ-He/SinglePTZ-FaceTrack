@@ -25,6 +25,7 @@ from src.track.sort_reid import Tracker, Track
 from src.ui.visualizer import Visualizer
 from src.ui.display import DisplayBackend
 from src.utils.geometry import iou
+from src.sdk.hik_isapi import HikISAPI
 
 logger = logging.getLogger("app")
 
@@ -52,7 +53,8 @@ class ScanScheduler:
                  person_det: Optional[YoloPerson] = None,
                  arcface: Optional[ArcFace] = None,
                  gallery: Optional[FaceGallery] = None,
-                 reid: Optional[OSNetReID] = None):
+                 reid: Optional[OSNetReID] = None,
+                 isapi: Optional[HikISAPI] = None):
         self.cfg = cfg
         self.ptz = ptz
         self.video = video
@@ -61,6 +63,7 @@ class ScanScheduler:
         self.person_det = person_det
         self.arcface = arcface
         self.gallery = gallery
+        self.isapi = isapi
 
         # Tracker + ReID
         self.reid = reid
@@ -353,6 +356,7 @@ class ScanScheduler:
         if self.capture_tracker is None:
             self.capture_tracker = CaptureTracker(
                 self.face_close, self.cfg.capture.tracking,
+                isapi=self.isapi,
             )
             # Prime it with the target bbox if available
             if self.target_bbox is not None:

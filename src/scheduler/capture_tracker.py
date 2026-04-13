@@ -11,6 +11,7 @@ import numpy as np
 from src.config import CaptureTrackingConfig
 from src.detect.yolo_face import YoloFace
 from src.utils.quality import quality_ok
+from src.sdk.hik_isapi import HikISAPI
 
 logger = logging.getLogger("app")
 
@@ -31,9 +32,11 @@ class CaptureTracker:
     """
 
     def __init__(self, face_detector: YoloFace,
-                 cfg: CaptureTrackingConfig):
+                 cfg: CaptureTrackingConfig,
+                 isapi: Optional[HikISAPI] = None):
         self.detector = face_detector
         self.cfg = cfg
+        self.isapi = isapi
         self.kf = self._init_kalman()
         self.kf_initialized = False
 
@@ -68,7 +71,25 @@ class CaptureTracker:
 
             if self._in_safe_zone(face_cx, face_cy, frame.shape):
                 # Safe zone: collect
-                crop = self._crop_expand(frame, face.bbox)
+                # Prefer ISAPI high-quality frame if available
+                source_frame = frame
+                if self.isapi is not None:
+                    isapi_frame = self.isapi.capture_jpeg()
+                    if isapi_frame is not None:
+                        source_frame = isapi_frame
+                        # Re-detect face in ISAPI frame for accurate crop
+                        isapi_dets = self.detector.detect(source_frame)
+                        if isapi_dets:
+                            isapi_face = self._pick_center_largest(
+                                isapi_dets, source_frame.shape)
+                            crop = self._crop_expand(source_frame, isapi_face.bbox)
+                        else:
+                            # Fallback: crop same region from ISAPI frame
+                            crop = self._crop_expand(source_frame, face.bbox)
+                    else:
+                        crop = self._crop_expand(frame, face.bbox)
+                else:
+                    crop = self._crop_expand(frame, face.bbox)
                 if crop is not None and quality_ok(crop):
                     return CaptureAction("collect", face_crop=crop)
                 return CaptureAction("none")
