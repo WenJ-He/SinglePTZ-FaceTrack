@@ -61,6 +61,7 @@ class PtzConfig:
     expand_ratio: float = 1.5
     settle_diff_th: float = 8.0
     settle_timeout: float = 2.0
+    focus_min_laplacian: float = 50.0
 
 
 @dataclass

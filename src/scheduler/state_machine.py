@@ -95,6 +95,9 @@ class ScanScheduler:
         self.capture_deadline = 0.0
         self.capture_tracker: Optional[CaptureTracker] = None
 
+        # Focus settled state
+        self._lap_history: List[float] = []
+
         # Event log
         self._event_count = 0
 
@@ -318,11 +321,20 @@ class ScanScheduler:
         self.state = State.SCAN_SETTLE
 
     def _handle_scan_settle(self, frame):
-        """Wait for frame to settle after zoom."""
+        """Wait for frame to settle and focus to complete after zoom."""
+        # Step 1: frame motion settled
         if not self._frame_settled(frame) and time.time() < self.settle_deadline:
             return
 
-        logger.info("SCAN_SETTLE: frame settled, entering CAPTURE")
+        # Step 2: focus quality settled (after motion settled)
+        if not self._focus_settled(frame):
+            if time.time() < self.settle_deadline:
+                return
+            # Timeout: proceed anyway even if focus not perfect
+            logger.warning("SCAN_SETTLE: focus settle timeout, proceeding to CAPTURE")
+
+        logger.info("SCAN_SETTLE: frame settled + focus OK, entering CAPTURE")
+        self._lap_history.clear()
         self.capture_buf = []
         self.capture_deadline = time.time() + self.cfg.capture.timeout
         self.capture_tracker = None
@@ -533,6 +545,29 @@ class ScanScheduler:
         diff = cv2.absdiff(gray, self._prev_gray).mean()
         self._prev_gray = gray
         return diff < self.cfg.ptz.settle_diff_th
+
+    def _focus_settled(self, frame) -> bool:
+        """Check if focus has completed using Laplacian variance trend.
+
+        Requires 3 consecutive frames with non-decreasing Laplacian variance
+        and the latest variance above focus_min_laplacian threshold.
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        self._lap_history.append(lap_var)
+        # Keep only last 3 samples
+        if len(self._lap_history) > 3:
+            self._lap_history = self._lap_history[-3:]
+
+        min_lap = self.cfg.ptz.focus_min_laplacian
+        if len(self._lap_history) >= 3:
+            h = self._lap_history
+            if h[-1] >= h[-2] >= h[-3] and h[-1] > min_lap:
+                logger.debug(
+                    f"  Focus settled: lap=[{h[-3]:.1f}, {h[-2]:.1f}, {h[-1]:.1f}]"
+                )
+                return True
+        return False
 
     def _build_scan_order(self, trigger_preset: int):
         """Build scan preset order starting from trigger preset."""
