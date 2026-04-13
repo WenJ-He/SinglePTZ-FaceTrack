@@ -8,7 +8,7 @@ def quality_ok(face_bgr: np.ndarray,
                min_w: int = 80,
                ar_lo: float = 0.6,
                ar_hi: float = 1.6,
-               blur_th: float = 80.0) -> bool:
+               blur_th: float = 50.0) -> bool:
     """Check if a face crop meets quality thresholds.
 
     Checks:

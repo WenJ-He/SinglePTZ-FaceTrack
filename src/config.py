@@ -21,7 +21,7 @@ class HikConfig:
 class PatrolConfig:
     presets: List[int] = field(default_factory=lambda: [1, 2, 3, 4])
     dwell: float = 4.0
-    min_confirm_frames: int = 2
+    min_confirm_frames: int = 3
 
 
 @dataclass
@@ -68,7 +68,7 @@ class PtzConfig:
 @dataclass
 class CaptureTrackingConfig:
     enabled: bool = True
-    safe_zone_ratio: float = 0.6
+    safe_zone_ratio: float = 0.75
     correction_settle: float = 0.5
     max_corrections: int = 3
     face_lost_kalman_ms: int = 500
@@ -79,7 +79,8 @@ class CaptureTrackingConfig:
 class CaptureConfig:
     min_samples: int = 3
     max_samples: int = 5
-    timeout: float = 4.0
+    timeout: float = 3.0
+    quality_blur_th: float = 50.0
     tracking: CaptureTrackingConfig = field(default_factory=CaptureTrackingConfig)
 
 

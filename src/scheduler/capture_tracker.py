@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from src.config import CaptureTrackingConfig
+from src.config import CaptureConfig
 from src.detect.yolo_face import YoloFace
 from src.utils.quality import quality_ok
 from src.sdk.hik_isapi import HikISAPI
@@ -32,7 +32,7 @@ class CaptureTracker:
     """
 
     def __init__(self, face_detector: YoloFace,
-                 cfg: CaptureTrackingConfig,
+                 cfg: CaptureConfig,
                  isapi: Optional[HikISAPI] = None):
         self.detector = face_detector
         self.cfg = cfg
@@ -90,7 +90,7 @@ class CaptureTracker:
                         crop = self._crop_expand(frame, face.bbox)
                 else:
                     crop = self._crop_expand(frame, face.bbox)
-                if crop is not None and quality_ok(crop):
+                if crop is not None and quality_ok(crop, blur_th=self.cfg.quality_blur_th):
                     return CaptureAction("collect", face_crop=crop)
                 return CaptureAction("none")
             else:
@@ -101,7 +101,7 @@ class CaptureTracker:
             # Face lost
             lost_ms = (now - self.last_face_ts) * 1000
 
-            if lost_ms < self.cfg.face_lost_kalman_ms:
+            if lost_ms < self.cfg.tracking.face_lost_kalman_ms:
                 pred_cx, pred_cy = self._kalman_predict()
                 pred_bbox = self._make_bbox_from_center(
                     pred_cx, pred_cy, self.last_face_bbox, frame.shape)
@@ -109,8 +109,8 @@ class CaptureTracker:
                     return self._trigger_correction(pred_bbox)
                 return CaptureAction("none")
 
-            elif lost_ms < self.cfg.face_lost_giveup_ms:
-                if self.correction_count < self.cfg.max_corrections:
+            elif lost_ms < self.cfg.tracking.face_lost_giveup_ms:
+                if self.correction_count < self.cfg.tracking.max_corrections:
                     pred_cx, pred_cy = self._kalman_predict()
                     pred_bbox = self._make_bbox_from_center(
                         pred_cx, pred_cy, self.last_face_bbox, frame.shape)
@@ -122,18 +122,18 @@ class CaptureTracker:
     def enter_correction_settle(self):
         """Called by state_machine after 3D re-positioning."""
         self.in_correction_settle = True
-        self.settle_until = time.time() + self.cfg.correction_settle
+        self.settle_until = time.time() + self.cfg.tracking.correction_settle
 
     def _trigger_correction(self, bbox) -> CaptureAction:
-        if self.correction_count >= self.cfg.max_corrections:
+        if self.correction_count >= self.cfg.tracking.max_corrections:
             return CaptureAction("giveup")
         self.correction_count += 1
         return CaptureAction("correct", corrected_bbox=bbox)
 
     def _in_safe_zone(self, cx, cy, frame_shape) -> bool:
         h, w = frame_shape[:2]
-        margin_x = w * (1 - self.cfg.safe_zone_ratio) / 2
-        margin_y = h * (1 - self.cfg.safe_zone_ratio) / 2
+        margin_x = w * (1 - self.cfg.tracking.safe_zone_ratio) / 2
+        margin_y = h * (1 - self.cfg.tracking.safe_zone_ratio) / 2
         return (margin_x <= cx <= w - margin_x and
                 margin_y <= cy <= h - margin_y)
 

@@ -11,7 +11,7 @@ hik:
 patrol:
   presets: [1, 2, 3, 4]
   dwell: 4.0
-  min_confirm_frames: 2
+  min_confirm_frames: 3
 
 models:
   face_wide:  "models/facedect/1280/best.onnx"
@@ -47,11 +47,12 @@ ptz:
 capture:
   min_samples: 3
   max_samples: 5
-  timeout:     4.0
+  timeout:     3.0
+  quality_blur_th: 50.0
 
   tracking:
     enabled: true
-    safe_zone_ratio: 0.6
+    safe_zone_ratio: 0.75
     correction_settle: 0.5
     max_corrections: 3
     face_lost_kalman_ms: 500

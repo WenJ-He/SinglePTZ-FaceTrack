@@ -355,7 +355,7 @@ class ScanScheduler:
         # Initialize capture tracker on first frame
         if self.capture_tracker is None:
             self.capture_tracker = CaptureTracker(
-                self.face_close, self.cfg.capture.tracking,
+                self.face_close, self.cfg.capture,
                 isapi=self.isapi,
             )
             # Prime it with the target bbox if available
