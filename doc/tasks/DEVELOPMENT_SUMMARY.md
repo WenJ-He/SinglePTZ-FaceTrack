@@ -1,6 +1,6 @@
 # SinglePTZ-FaceTrack 开发总结
 
-## 状态：全部8个里程碑完成（43/43任务）
+## 状态：全部8个里程碑完成 + 实测优化完成（43/43 + 7/7 OPT）
 
 ### 已完成里程碑
 
@@ -23,7 +23,8 @@ src/
 ├── main.py                      # 程序入口
 ├── sdk/
 │   ├── hik_sdk.py               # 海康SDK ctypes绑定
-│   └── hik_ptz.py               # PTZ业务封装
+│   ├── hik_ptz.py               # PTZ业务封装
+│   └── hik_isapi.py             # ISAPI高清抓图接口（OPT-P1-2新增）
 ├── video/
 │   └── rtsp_source.py           # RTSP后台取流
 ├── detect/
@@ -37,8 +38,8 @@ src/
 ├── track/
 │   └── sort_reid.py             # SORT+ReID 跟踪器
 ├── scheduler/
-│   ├── state_machine.py         # 12态扫描调度器
-│   └── capture_tracker.py       # B+C动态追踪修正
+│   ├── state_machine.py         # 12态扫描调度器（含聚焦判定）
+│   └── capture_tracker.py       # B+C动态追踪修正（含ISAPI抓图）
 ├── ui/
 │   ├── visualizer.py            # 帧标注渲染
 │   ├── web_stream.py            # Flask MJPEG HTTP流
@@ -49,6 +50,15 @@ src/
     ├── quality.py               # 人脸质量检查
     └── event_logger.py          # JSONL事件日志
 ```
+
+### 实测优化（OPT）
+
+| 批次 | 任务 | 改动 | 提交 |
+|---|---|---|---|
+| OPT-P0 | 巡航改用人体检测 + Web画质 + 稳图阈值 | config/state_machine | b044892 |
+| OPT-P1-1 | 聚焦完成判定（拉普拉斯方差） | state_machine | ad4825e |
+| OPT-P1-2 | ISAPI高清抓图用于CAPTURE | hik_isapi(新)/capture_tracker/main | a1f8a8d |
+| OPT-P2 | 参数批量调优 | config/quality/capture_tracker | 6ac8061 |
 
 ### 实机测试注意事项
 
