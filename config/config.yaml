@@ -23,11 +23,11 @@ runtime:
   prefer_gpu: true
 
 detect:
-  face_wide_conf:  0.30
+  face_wide_conf:  0.50
   face_wide_iou:   0.5
   face_close_conf: 0.35
   face_close_iou:  0.5
-  person_conf:     0.3
+  person_conf:     0.45
   person_iou:      0.5
 
 track:
@@ -38,9 +38,9 @@ track:
   reid_ema:    0.1
 
 ptz:
-  expand_ratio:    2.0
-  settle_diff_th:  2.0
-  settle_timeout:  1.5
+  expand_ratio:    1.5
+  settle_diff_th:  8.0
+  settle_timeout:  2.0
 
 capture:
   min_samples: 3
@@ -66,7 +66,7 @@ display:
   mode: "web"
   web_host: "0.0.0.0"
   web_port: 18080
-  jpeg_quality: 70
+  jpeg_quality: 90
 
 output:
   strangers_dir: "output/strangers"

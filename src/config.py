@@ -39,11 +39,11 @@ class RuntimeConfig:
 
 @dataclass
 class DetectConfig:
-    face_wide_conf: float = 0.30
+    face_wide_conf: float = 0.50
     face_wide_iou: float = 0.5
     face_close_conf: float = 0.35
     face_close_iou: float = 0.5
-    person_conf: float = 0.3
+    person_conf: float = 0.45
     person_iou: float = 0.5
 
 
@@ -58,9 +58,9 @@ class TrackConfig:
 
 @dataclass
 class PtzConfig:
-    expand_ratio: float = 2.0
-    settle_diff_th: float = 2.0
-    settle_timeout: float = 1.5
+    expand_ratio: float = 1.5
+    settle_diff_th: float = 8.0
+    settle_timeout: float = 2.0
 
 
 @dataclass
@@ -97,7 +97,7 @@ class DisplayConfig:
     mode: str = "web"
     web_host: str = "0.0.0.0"
     web_port: int = 8080
-    jpeg_quality: int = 70
+    jpeg_quality: int = 90
 
 
 @dataclass

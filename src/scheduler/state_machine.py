@@ -202,13 +202,14 @@ class ScanScheduler:
                 f"{self.cfg.patrol.presets[self.patrol_idx]}"
             )
 
-        # Detect faces
-        dets = self.face_wide.detect(frame)
+        # Detect targets (prefer person_det for reliability, fallback to face_wide)
+        detector = self.person_det if self.person_det else self.face_wide
+        dets = detector.detect(frame)
 
         if len(dets) > 0:
             self._face_confirm_count += 1
             logger.debug(
-                f"  Detected {len(dets)} faces "
+                f"  Detected {len(dets)} targets "
                 f"(confirm: {self._face_confirm_count}/{self.cfg.patrol.min_confirm_frames})"
             )
             if self._face_confirm_count >= self.cfg.patrol.min_confirm_frames:
@@ -252,7 +253,8 @@ class ScanScheduler:
             return
 
         logger.info("SCAN_DETECT: running detection")
-        dets = self.face_wide.detect(frame)
+        detector = self.person_det if self.person_det else self.face_wide
+        dets = detector.detect(frame)
 
         # Run tracker
         now = time.time()
