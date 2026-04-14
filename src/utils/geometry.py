@@ -59,3 +59,12 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if na < 1e-9 or nb < 1e-9:
         return 0.0
     return float(np.dot(a, b) / (na * nb))
+
+
+def is_edge_bbox(bbox: Tuple[int, int, int, int],
+                 frame_w: int, frame_h: int,
+                 margin: int = 5) -> bool:
+    """Check if bbox touches the frame edge within margin pixels."""
+    x1, y1, x2, y2 = bbox
+    return (x1 < margin or y1 < margin
+            or x2 > frame_w - margin or y2 > frame_h - margin)

@@ -30,6 +30,8 @@ detect:
   face_close_iou:  0.5
   person_conf:     0.45
   person_iou:      0.5
+  edge_reject_enabled: true
+  edge_margin:     5
 
 track:
   iou_weight:  0.6

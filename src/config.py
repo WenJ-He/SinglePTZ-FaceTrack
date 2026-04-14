@@ -46,6 +46,8 @@ class DetectConfig:
     face_close_iou: float = 0.5
     person_conf: float = 0.45
     person_iou: float = 0.5
+    edge_reject_enabled: bool = True
+    edge_margin: int = 5
 
 
 @dataclass

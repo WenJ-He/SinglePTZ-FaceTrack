@@ -65,7 +65,9 @@ def main():
         face_wide = YoloFace(cfg.models.face_wide, input_size=1280,
                              conf=cfg.detect.face_wide_conf,
                              iou=cfg.detect.face_wide_iou,
-                             providers=providers)
+                             providers=providers,
+                             edge_reject_enabled=cfg.detect.edge_reject_enabled,
+                             edge_margin=cfg.detect.edge_margin)
         face_close = YoloFace(cfg.models.face_close, input_size=640,
                               conf=cfg.detect.face_close_conf,
                               iou=cfg.detect.face_close_iou,
