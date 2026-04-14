@@ -60,9 +60,13 @@ class TrackConfig:
 @dataclass
 class PtzConfig:
     expand_ratio: float = 1.5
-    settle_diff_th: float = 8.0
+    settle_diff_th: float = 5.0
     settle_timeout: float = 2.0
     focus_min_laplacian: float = 50.0
+    min_wait_after_cmd: float = 0.8
+    min_wait_after_zoom: float = 1.0
+    motion_th: float = 15.0
+    stable_frames: int = 3
 
 
 @dataclass

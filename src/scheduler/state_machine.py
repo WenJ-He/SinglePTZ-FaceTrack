@@ -89,6 +89,13 @@ class ScanScheduler:
         self.dwell_deadline: Optional[float] = None
         self._prev_gray: Optional[np.ndarray] = None
 
+        # PTZ command tracking & settle state machine
+        self._ptz_cmd_ts: float = 0.0
+        self._ptz_cmd_type: str = "preset"  # "preset" or "zoom"
+        self._settle_phase: str = "WAITING_MOTION"  # WAITING_MOTION / MOTION_DETECTED
+        self._settle_stable_count: int = 0
+        self._flushed_after_wait: bool = False
+
         # Scan state
         self.scan_preset_queue: Deque[int] = deque()
         self.current_scan_preset: Optional[int] = None
@@ -191,7 +198,7 @@ class ScanScheduler:
         self.ptz.goto_preset(preset)
         self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
         self.dwell_deadline = None
-        self._prev_gray = None
+        self._record_ptz_cmd("preset")
         self.state = State.PATROL_DWELL
 
     def _handle_patrol_dwell(self, frame):
@@ -250,7 +257,7 @@ class ScanScheduler:
         logger.info(f"SCAN_GOTO_PRESET: moving to preset {self.current_scan_preset}")
         self.ptz.goto_preset(self.current_scan_preset)
         self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
-        self._prev_gray = None
+        self._record_ptz_cmd("preset")
         self.state = State.SCAN_DETECT
 
     def _handle_scan_detect(self, frame):
@@ -312,7 +319,7 @@ class ScanScheduler:
         )
         if ok:
             self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
-            self._prev_gray = None
+            self._record_ptz_cmd("zoom")
             self.state = State.SCAN_SETTLE
         else:
             logger.warning("zoom_to_bbox failed, skipping target")
@@ -436,7 +443,7 @@ class ScanScheduler:
         if self.current_scan_preset is not None:
             self.ptz.goto_preset(self.current_scan_preset)
         self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
-        self._prev_gray = None
+        self._record_ptz_cmd("preset")
         self.state = State.SCAN_PICK
 
     def _handle_scan_next_preset(self):
@@ -540,15 +547,75 @@ class ScanScheduler:
 
     # ── Helpers ──
 
+    def _record_ptz_cmd(self, cmd_type: str = "preset") -> None:
+        """Record PTZ command timestamp and reset settle state machine."""
+        self._ptz_cmd_ts = time.time()
+        self._ptz_cmd_type = cmd_type
+        self._settle_phase = "WAITING_MOTION"
+        self._settle_stable_count = 0
+        self._prev_gray = None
+        self._flushed_after_wait = False
+
     def _frame_settled(self, frame) -> bool:
-        """Check if frame motion is below threshold (frame diff)."""
+        """Two-phase settle detection: wait for motion then wait for stability.
+
+        Phase 1 (WAITING_MOTION): Wait until frame diff exceeds motion_th,
+        proving the PTZ has physically started moving.
+        Phase 2 (MOTION_DETECTED): Wait until frame diff stays below
+        settle_diff_th for consecutive stable_frames, proving movement stopped.
+        """
+        now = time.time()
+        min_wait = (
+            self.cfg.ptz.min_wait_after_zoom
+            if self._ptz_cmd_type == "zoom"
+            else self.cfg.ptz.min_wait_after_cmd
+        )
+
+        # Enforce minimum wait after PTZ command
+        if now - self._ptz_cmd_ts < min_wait:
+            self._flushed_after_wait = False
+            return False
+
+        # First frame after min_wait: flush RTSP buffer and reset reference
+        if not self._flushed_after_wait:
+            self.video.flush()
+            self._flushed_after_wait = True
+            self._prev_gray = None
+            logger.debug(
+                f"  PTZ min_wait elapsed ({min_wait:.1f}s), "
+                f"starting settle detection"
+            )
+            return False
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if self._prev_gray is None:
             self._prev_gray = gray
             return False
+
         diff = cv2.absdiff(gray, self._prev_gray).mean()
         self._prev_gray = gray
-        return diff < self.cfg.ptz.settle_diff_th
+
+        if self._settle_phase == "WAITING_MOTION":
+            if diff > self.cfg.ptz.motion_th:
+                logger.debug(f"  Motion detected: diff={diff:.1f}")
+                self._settle_phase = "MOTION_DETECTED"
+                self._settle_stable_count = 0
+            return False
+
+        elif self._settle_phase == "MOTION_DETECTED":
+            if diff < self.cfg.ptz.settle_diff_th:
+                self._settle_stable_count += 1
+                if self._settle_stable_count >= self.cfg.ptz.stable_frames:
+                    logger.debug(
+                        f"  Settled: {self._settle_stable_count} frames "
+                        f"stable (diff={diff:.1f})"
+                    )
+                    return True
+            else:
+                self._settle_stable_count = 0
+            return False
+
+        return True
 
     def _focus_settled(self, frame) -> bool:
         """Check if focus has completed using Laplacian variance trend.

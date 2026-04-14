@@ -46,7 +46,8 @@ def main():
     # Init SDK + PTZ
     sdk = HikSDK(cfg.hik.sdk_lib_dir)
     ptz = HikPTZ(sdk, cfg.hik.ip, cfg.hik.port,
-                  cfg.hik.user, cfg.hik.password, cfg.hik.channel)
+                  cfg.hik.user, cfg.hik.password, cfg.hik.channel,
+                  min_interval=cfg.ptz.min_wait_after_cmd)
 
     try:
         # Login

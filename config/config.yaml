@@ -40,9 +40,13 @@ track:
 
 ptz:
   expand_ratio:    1.5
-  settle_diff_th:  8.0
+  settle_diff_th:  5.0
   settle_timeout:  2.0
   focus_min_laplacian: 50.0
+  min_wait_after_cmd:  0.8
+  min_wait_after_zoom: 1.0
+  motion_th:           15.0
+  stable_frames:       3
 
 capture:
   min_samples: 3

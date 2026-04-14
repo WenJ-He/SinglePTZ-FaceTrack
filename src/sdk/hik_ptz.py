@@ -1,6 +1,7 @@
 """Hikvision PTZ business wrapper."""
 
 import logging
+import time
 from ctypes import sizeof
 from typing import Optional, Tuple
 
@@ -23,7 +24,8 @@ class HikPTZ:
     DEVICE_ABILITY_INFO = 0x011
 
     def __init__(self, sdk: HikSDK, ip: str, port: int,
-                 user: str, password: str, channel: int):
+                 user: str, password: str, channel: int,
+                 min_interval: float = 0.8):
         self.sdk = sdk
         self.ip = ip
         self.port = port
@@ -31,6 +33,8 @@ class HikPTZ:
         self.password = password
         self.channel = channel
         self.user_id: Optional[int] = None
+        self._last_cmd_ts: float = 0.0
+        self.min_interval = min_interval
 
     def login(self) -> None:
         """Login to device. Raises on failure."""
@@ -115,9 +119,11 @@ class HikPTZ:
 
     def goto_preset(self, preset_id: int) -> bool:
         """Move PTZ to a preset position."""
+        self._wait_if_needed()
         ok = self.sdk.sdk.NET_DVR_PTZPreset_Other(
             self.user_id, self.channel, self.GOTO_PRESET, preset_id,
         )
+        self._last_cmd_ts = time.time()
         if not ok:
             err = self.sdk.sdk.NET_DVR_GetLastError()
             logger.warning(f"goto_preset({preset_id}) failed, error={err}")
@@ -131,6 +137,7 @@ class HikPTZ:
         bbox: (x1, y1, x2, y2) in pixel coordinates
         expand: outward expansion ratio
         """
+        self._wait_if_needed()
         expanded = bbox_expand(bbox, expand, frame_w, frame_h)
         coords = bbox_to_point_frame(expanded, frame_w, frame_h)
 
@@ -144,10 +151,19 @@ class HikPTZ:
         ok = self.sdk.sdk.NET_DVR_PTZSelZoomIn_EX(
             self.user_id, self.channel, byref(pf),
         )
+        self._last_cmd_ts = time.time()
         if not ok:
             err = self.sdk.sdk.NET_DVR_GetLastError()
             logger.warning(f"zoom_to_bbox failed, error={err}")
         return ok
+
+    def _wait_if_needed(self) -> None:
+        """Enforce minimum interval between PTZ commands (debounce)."""
+        elapsed = time.time() - self._last_cmd_ts
+        if elapsed < self.min_interval:
+            sleep_time = self.min_interval - elapsed
+            logger.debug(f"PTZ debounce: sleeping {sleep_time:.2f}s")
+            time.sleep(sleep_time)
 
     def start_record(self) -> bool:
         """Start manual recording."""

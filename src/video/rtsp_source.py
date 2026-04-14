@@ -54,6 +54,16 @@ class RtspSource:
             self._thread.join(timeout=5.0)
         logger.info("RTSP source stopped")
 
+    def flush(self, n_frames: int = 5) -> None:
+        """Flush RTSP buffer by waiting for fresh frames.
+
+        Reads and discards frames to ensure subsequent reads get
+        frames captured after the PTZ movement started.
+        """
+        for _ in range(n_frames):
+            time.sleep(0.033)  # ~30fps interval
+            self.read()
+
     def _loop(self):
         retries = 0
         while not self._stop.is_set():
