@@ -95,6 +95,7 @@ class ScanScheduler:
         self._settle_phase: str = "WAITING_MOTION"  # WAITING_MOTION / MOTION_DETECTED
         self._settle_stable_count: int = 0
         self._flushed_after_wait: bool = False
+        self._timing_start: float = 0.0
 
         # Scan state
         self.scan_preset_queue: Deque[int] = deque()
@@ -195,10 +196,12 @@ class ScanScheduler:
         """Move to next patrol preset."""
         preset = self.cfg.patrol.presets[self.patrol_idx]
         logger.info(f"PATROL_GOTO: moving to preset {preset}")
+        self._timing_start = time.time()
         self.ptz.goto_preset(preset)
-        self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
+        self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout_long
         self.dwell_deadline = None
         self._record_ptz_cmd("preset")
+        logger.info(f"[TIMING] state=PATROL_GOTO, phase=cmd_issued")
         self.state = State.PATROL_DWELL
 
     def _handle_patrol_dwell(self, frame):
@@ -255,9 +258,11 @@ class ScanScheduler:
                 return
 
         logger.info(f"SCAN_GOTO_PRESET: moving to preset {self.current_scan_preset}")
+        self._timing_start = time.time()
         self.ptz.goto_preset(self.current_scan_preset)
-        self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
+        self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout_long
         self._record_ptz_cmd("preset")
+        logger.info(f"[TIMING] state=SCAN_GOTO_PRESET, phase=cmd_issued")
         self.state = State.SCAN_DETECT
 
     def _handle_scan_detect(self, frame):
@@ -318,8 +323,10 @@ class ScanScheduler:
             expand=self.cfg.ptz.expand_ratio,
         )
         if ok:
-            self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
+            self._timing_start = time.time()
+            self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout_short
             self._record_ptz_cmd("zoom")
+            logger.info(f"[TIMING] state=SCAN_PICK, phase=zoom_issued")
             self.state = State.SCAN_SETTLE
         else:
             logger.warning("zoom_to_bbox failed, skipping target")
@@ -441,9 +448,11 @@ class ScanScheduler:
     def _handle_scan_zoom_out(self, frame):
         """Return to current scan preset."""
         if self.current_scan_preset is not None:
+            self._timing_start = time.time()
             self.ptz.goto_preset(self.current_scan_preset)
-        self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout
+        self.settle_deadline = time.time() + self.cfg.ptz.settle_timeout_short
         self._record_ptz_cmd("preset")
+        logger.info(f"[TIMING] state=SCAN_ZOOM_OUT, phase=cmd_issued")
         self.state = State.SCAN_PICK
 
     def _handle_scan_next_preset(self):
@@ -581,9 +590,10 @@ class ScanScheduler:
             self.video.flush()
             self._flushed_after_wait = True
             self._prev_gray = None
-            logger.debug(
-                f"  PTZ min_wait elapsed ({min_wait:.1f}s), "
-                f"starting settle detection"
+            elapsed_ms = (now - self._ptz_cmd_ts) * 1000
+            logger.info(
+                f"[TIMING] state={self.state.name}, phase=min_wait_done, "
+                f"elapsed={elapsed_ms:.0f}ms"
             )
             return False
 
@@ -597,7 +607,11 @@ class ScanScheduler:
 
         if self._settle_phase == "WAITING_MOTION":
             if diff > self.cfg.ptz.motion_th:
-                logger.debug(f"  Motion detected: diff={diff:.1f}")
+                elapsed_ms = (now - self._timing_start) * 1000
+                logger.info(
+                    f"[TIMING] state={self.state.name}, phase=motion_detected, "
+                    f"elapsed={elapsed_ms:.0f}ms, diff={diff:.1f}"
+                )
                 self._settle_phase = "MOTION_DETECTED"
                 self._settle_stable_count = 0
             return False
@@ -606,9 +620,11 @@ class ScanScheduler:
             if diff < self.cfg.ptz.settle_diff_th:
                 self._settle_stable_count += 1
                 if self._settle_stable_count >= self.cfg.ptz.stable_frames:
-                    logger.debug(
-                        f"  Settled: {self._settle_stable_count} frames "
-                        f"stable (diff={diff:.1f})"
+                    elapsed_ms = (now - self._timing_start) * 1000
+                    logger.info(
+                        f"[TIMING] state={self.state.name}, phase=settled, "
+                        f"elapsed={elapsed_ms:.0f}ms, "
+                        f"stable_frames={self._settle_stable_count}"
                     )
                     return True
             else:
