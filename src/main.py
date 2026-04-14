@@ -75,7 +75,9 @@ def main():
         person_det = YoloPerson(cfg.models.person, input_size=640,
                                 conf=cfg.detect.person_conf,
                                 iou=cfg.detect.person_iou,
-                                providers=providers)
+                                providers=providers,
+                                edge_reject_enabled=cfg.detect.edge_reject_enabled,
+                                edge_margin=cfg.detect.edge_margin)
 
         # Init ArcFace + gallery
         arcface = ArcFace(cfg.models.arcface, providers=providers)
@@ -127,21 +129,23 @@ def main():
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        # Stdin reader thread for commands
+        # Stdin reader thread for commands (skip if not interactive)
         import threading
-        def stdin_reader():
-            while not scheduler.stop_flag:
-                try:
-                    line = input()
-                    cmd = line.strip().lower()
-                    if cmd:
-                        scheduler.handle_command(cmd)
-                except (EOFError, KeyboardInterrupt):
-                    scheduler.stop_flag = True
-                    break
+        import sys as _sys
+        if _sys.stdin.isatty():
+            def stdin_reader():
+                while not scheduler.stop_flag:
+                    try:
+                        line = input()
+                        cmd = line.strip().lower()
+                        if cmd:
+                            scheduler.handle_command(cmd)
+                    except (EOFError, KeyboardInterrupt):
+                        scheduler.stop_flag = True
+                        break
 
-        stdin_thread = threading.Thread(target=stdin_reader, daemon=True)
-        stdin_thread.start()
+            stdin_thread = threading.Thread(target=stdin_reader, daemon=True)
+            stdin_thread.start()
 
         # Run
         scheduler.run()

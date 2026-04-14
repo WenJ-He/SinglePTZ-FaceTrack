@@ -8,6 +8,7 @@ import numpy as np
 import onnxruntime as ort
 
 from src.detect.yolo_face import Detection
+from src.utils.geometry import is_edge_bbox
 
 logger = logging.getLogger("app")
 
@@ -23,13 +24,17 @@ class YoloPerson:
 
     def __init__(self, onnx_path: str, input_size: int = 640,
                  conf: float = 0.3, iou: float = 0.5,
-                 providers=None):
+                 providers=None,
+                 edge_reject_enabled: bool = False,
+                 edge_margin: int = 5):
         if providers is None:
             providers = ["CPUExecutionProvider"]
 
         self.input_size = input_size
         self.conf = conf
         self.iou = iou
+        self.edge_reject_enabled = edge_reject_enabled
+        self.edge_margin = edge_margin
 
         self.sess = ort.InferenceSession(onnx_path, providers=providers)
         self.input_name = self.sess.get_inputs()[0].name
@@ -91,8 +96,12 @@ class YoloPerson:
             y1 = max(0, int(round(y1)))
             x2 = min(w, int(round(x2)))
             y2 = min(h, int(round(y2)))
+            bbox = (x1, y1, x2, y2)
+            if self.edge_reject_enabled and is_edge_bbox(
+                    bbox, w, h, self.edge_margin):
+                continue
             results.append(Detection(
-                (x1, y1, x2, y2), float(person_scores[idx]),
+                bbox, float(person_scores[idx]),
                 cls_id=PERSON_CLASS_ID,
             ))
 

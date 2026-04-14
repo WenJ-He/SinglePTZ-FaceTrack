@@ -96,6 +96,7 @@ class ScanScheduler:
         self._settle_stable_count: int = 0
         self._flushed_after_wait: bool = False
         self._timing_start: float = 0.0
+        self._settle_logged: bool = False
 
         # Scan state
         self.scan_preset_queue: Deque[int] = deque()
@@ -564,6 +565,7 @@ class ScanScheduler:
         self._settle_stable_count = 0
         self._prev_gray = None
         self._flushed_after_wait = False
+        self._settle_logged = False
 
     def _frame_settled(self, frame) -> bool:
         """Two-phase settle detection: wait for motion then wait for stability.
@@ -620,12 +622,14 @@ class ScanScheduler:
             if diff < self.cfg.ptz.settle_diff_th:
                 self._settle_stable_count += 1
                 if self._settle_stable_count >= self.cfg.ptz.stable_frames:
-                    elapsed_ms = (now - self._timing_start) * 1000
-                    logger.info(
-                        f"[TIMING] state={self.state.name}, phase=settled, "
-                        f"elapsed={elapsed_ms:.0f}ms, "
-                        f"stable_frames={self._settle_stable_count}"
-                    )
+                    if not self._settle_logged:
+                        elapsed_ms = (now - self._timing_start) * 1000
+                        logger.info(
+                            f"[TIMING] state={self.state.name}, phase=settled, "
+                            f"elapsed={elapsed_ms:.0f}ms, "
+                            f"stable_frames={self._settle_stable_count}"
+                        )
+                        self._settle_logged = True
                     return True
             else:
                 self._settle_stable_count = 0
