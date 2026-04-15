@@ -181,29 +181,58 @@ class HikPTZ:
 
     def _zoom_via_isapi(self, expanded: Tuple[int, int, int, int],
                         frame_w: int, frame_h: int) -> bool:
-        """Zoom using ISAPI ptzDrag endpoint."""
-        # Use native resolution for ISAPI if available
-        native_w, native_h = frame_w, frame_h
-        if hasattr(self, '_native_resolution') and self._native_resolution:
-            native_w, native_h = self._native_resolution
-            # Scale bbox from RTSP resolution to native resolution
-            sx = native_w / frame_w
-            sy = native_h / frame_h
-            scaled = (
-                int(expanded[0] * sx), int(expanded[1] * sy),
-                int(expanded[2] * sx), int(expanded[3] * sy),
-            )
-        else:
-            scaled = expanded
+        """Zoom using ISAPI absolute positioning.
+
+        Reads current PTZ position, calculates target pan/tilt/zoom
+        from the bbox, and sends absolute positioning command.
+        """
+        if self.isapi is None:
+            logger.warning("  ISAPI zoom: no ISAPI instance")
+            return False
+
+        # Get current position
+        pos = self.isapi.get_ptz_status()
+        if pos is None:
+            logger.warning("  ISAPI zoom: cannot read current PTZ position")
+            return False
+
+        cur_az = pos["azimuth"]
+        cur_el = pos["elevation"]
+        cur_zoom = pos["absoluteZoom"]
+
+        # Estimate FOV at zoom=1x (typical for Hikvision dome cameras)
+        # These can be calibrated per-camera; defaults are conservative
+        hfov_at_1x = getattr(self, '_hfov_1x', 58.0)  # degrees
+        vfov_at_1x = getattr(self, '_vfov_1x', 33.0)
+
+        # Current effective FOV
+        cur_hfov = hfov_at_1x / max(cur_zoom, 0.1)
+        cur_vfov = vfov_at_1x / max(cur_zoom, 0.1)
+
+        # Bbox center offset from frame center (normalized -1..+1)
+        cx = ((expanded[0] + expanded[2]) / 2 - frame_w / 2) / frame_w
+        cy = ((expanded[1] + expanded[3]) / 2 - frame_h / 2) / frame_h
+
+        # Angular offset
+        d_az = cx * cur_hfov
+        d_el = -cy * cur_vfov  # negative because y-down in image, elevation positive is up
+
+        # Target zoom: fit bbox to ~60% of frame
+        bbox_w = expanded[2] - expanded[0]
+        bbox_h = expanded[3] - expanded[1]
+        zoom_by_w = (frame_w * 0.6) / max(bbox_w, 1) * cur_zoom
+        zoom_by_h = (frame_h * 0.6) / max(bbox_h, 1) * cur_zoom
+        target_zoom = min(zoom_by_w, zoom_by_h, 20.0)  # cap at 20x
+
+        target_az = cur_az + d_az
+        target_el = cur_el + d_el
 
         logger.info(
-            f"  zoom_to_bbox[ISAPI]: expanded={expanded}, "
-            f"scaled={scaled}, native={native_w}x{native_h}"
+            f"  zoom_to_bbox[ISAPI]: cur=({cur_az:.1f},{cur_el:.1f},z{cur_zoom:.1f}), "
+            f"offset=({d_az:.2f},{d_el:.2f}), target=({target_az:.1f},{target_el:.1f},z{target_zoom:.1f})"
         )
-        ok = self.isapi.ptz_drag_zoom(
-            scaled[0], scaled[1], scaled[2], scaled[3],
-            native_w, native_h,
-        )
+
+        ok = self.isapi.ptz_absolute_zoom(target_az, target_el, target_zoom)
         self._last_cmd_ts = time.time()
         return ok
 

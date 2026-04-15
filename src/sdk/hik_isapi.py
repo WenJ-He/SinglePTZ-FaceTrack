@@ -169,3 +169,70 @@ class HikISAPI:
         except requests.RequestException as e:
             logger.warning(f"  ISAPI ptzDrag error: {e}")
             return False
+
+    def get_ptz_status(self) -> Optional[dict]:
+        """Get current PTZ absolute position.
+
+        Returns dict with keys: azimuth, elevation, absoluteZoom.
+        azimuth/elevation in degrees, absoluteZoom as multiplier (1.0=wide).
+        """
+        url = f"{self._base_url}/PTZCtrl/channels/{self.channel}/absoluteEx"
+        try:
+            resp = requests.get(url, auth=self._auth, timeout=self.timeout)
+            if resp.status_code != 200:
+                return None
+            import re
+            az = re.search(r'<azimuth>([^<]+)</azimuth>', resp.text)
+            el = re.search(r'<elevation>([^<]+)</elevation>', resp.text)
+            zm = re.search(r'<absoluteZoom>([^<]+)</absoluteZoom>', resp.text)
+            if az and el and zm:
+                return {
+                    "azimuth": float(az.group(1)),
+                    "elevation": float(el.group(1)),
+                    "absoluteZoom": float(zm.group(1)),
+                }
+            return None
+        except requests.RequestException:
+            return None
+
+    def ptz_absolute_zoom(self, azimuth: float, elevation: float,
+                          absolute_zoom: float) -> bool:
+        """Move PTZ to absolute position via ISAPI.
+
+        azimuth: horizontal angle in degrees
+        elevation: vertical angle in degrees
+        absolute_zoom: zoom multiplier (1.0=wide, max depends on camera)
+        """
+        url = f"{self._base_url}/PTZCtrl/channels/{self.channel}/absoluteEx"
+        body = (
+            f'<?xml version="1.0" encoding="UTF-8"?>'
+            f'<PTZAbsoluteEx>'
+            f'<elevation>{elevation:.2f}</elevation>'
+            f'<azimuth>{azimuth:.2f}</azimuth>'
+            f'<absoluteZoom>{absolute_zoom:.2f}</absoluteZoom>'
+            f'</PTZAbsoluteEx>'
+        )
+        logger.info(
+            f"  ISAPI absolute: az={azimuth:.2f}, el={elevation:.2f}, "
+            f"zoom={absolute_zoom:.2f}"
+        )
+        try:
+            resp = requests.put(
+                url,
+                data=body.encode("utf-8"),
+                auth=self._auth,
+                timeout=self.timeout,
+                headers={"Content-Type": "application/xml"},
+            )
+            if resp.status_code in (200, 201):
+                logger.info(f"  ISAPI absolute OK: HTTP {resp.status_code}")
+                return True
+            else:
+                logger.warning(
+                    f"  ISAPI absolute failed: HTTP {resp.status_code}, "
+                    f"body={resp.text[:200]}"
+                )
+                return False
+        except requests.RequestException as e:
+            logger.warning(f"  ISAPI absolute error: {e}")
+            return False
