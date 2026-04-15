@@ -43,11 +43,20 @@ def main():
     # ORT providers
     providers = auto_providers(cfg.runtime.prefer_gpu)
 
+    # Init ISAPI early (needed by PTZ for ISAPI zoom backend)
+    isapi = None
+    if cfg.hik.isapi_enabled:
+        isapi = HikISAPI(cfg.hik.ip, cfg.hik.user, cfg.hik.password,
+                         cfg.hik.channel)
+        logger.info("ISAPI enabled")
+
     # Init SDK + PTZ
+    zoom_backend = getattr(cfg.ptz, 'zoom_backend', 'sdk')
     sdk = HikSDK(cfg.hik.sdk_lib_dir)
     ptz = HikPTZ(sdk, cfg.hik.ip, cfg.hik.port,
                   cfg.hik.user, cfg.hik.password, cfg.hik.channel,
-                  min_interval=cfg.ptz.min_wait_after_cmd)
+                  min_interval=cfg.ptz.min_wait_after_cmd,
+                  isapi=isapi, zoom_backend=zoom_backend)
 
     try:
         # Login
@@ -60,6 +69,14 @@ def main():
                 "Device may not support 3D positioning (PTZZoomIn). "
                 "Continuing anyway; zoom calls will fail gracefully."
             )
+
+        # Query native resolution for ISAPI zoom
+        if isapi is not None:
+            native = ptz.query_native_resolution()
+            if native:
+                logger.info(f"Camera native resolution: {native[0]}x{native[1]}")
+            # Also query streaming resolution for comparison
+            isapi.get_streaming_resolution()
 
         # Init detectors
         face_wide = YoloFace(cfg.models.face_wide, input_size=1280,
@@ -108,12 +125,8 @@ def main():
             ptz.logout()
             return
 
-        # Init ISAPI for high-quality capture (optional)
-        isapi = None
-        if cfg.hik.isapi_enabled:
-            isapi = HikISAPI(cfg.hik.ip, cfg.hik.user, cfg.hik.password,
-                             cfg.hik.channel)
-            logger.info("ISAPI high-quality capture enabled")
+        # Init ISAPI for high-quality capture (already initialized above)
+        logger.info(f"ISAPI high-quality capture: {'enabled' if isapi else 'disabled'}")
 
         # Init scheduler
         scheduler = ScanScheduler(

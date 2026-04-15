@@ -25,7 +25,9 @@ class HikPTZ:
 
     def __init__(self, sdk: HikSDK, ip: str, port: int,
                  user: str, password: str, channel: int,
-                 min_interval: float = 0.8):
+                 min_interval: float = 0.8,
+                 isapi=None,
+                 zoom_backend: str = "sdk"):
         self.sdk = sdk
         self.ip = ip
         self.port = port
@@ -35,6 +37,8 @@ class HikPTZ:
         self.user_id: Optional[int] = None
         self._last_cmd_ts: float = 0.0
         self.min_interval = min_interval
+        self.isapi = isapi
+        self.zoom_backend = zoom_backend
 
     def login(self) -> None:
         """Login to device. Raises on failure."""
@@ -139,7 +143,18 @@ class HikPTZ:
         """
         self._wait_if_needed()
         expanded = bbox_expand(bbox, expand, frame_w, frame_h)
+
+        # ISAPI path: use ptzDrag
+        if self.zoom_backend == "isapi" and self.isapi is not None:
+            return self._zoom_via_isapi(expanded, frame_w, frame_h)
+
+        # SDK path: NET_DVR_PTZSelZoomIn_EX
         coords = bbox_to_point_frame(expanded, frame_w, frame_h)
+        logger.info(
+            f"  zoom_to_bbox[SDK]: bbox={bbox}, expanded={expanded}, "
+            f"frame={frame_w}x{frame_h}, "
+            f"normalized=[{coords[0]},{coords[1]},{coords[2]},{coords[3]}]/255"
+        )
 
         pf = NET_DVR_POINT_FRAME()
         pf.xTop = coords[0]
@@ -152,10 +167,54 @@ class HikPTZ:
             self.user_id, self.channel, byref(pf),
         )
         self._last_cmd_ts = time.time()
+
+        err = self.sdk.sdk.NET_DVR_GetLastError()
         if not ok:
-            err = self.sdk.sdk.NET_DVR_GetLastError()
-            logger.warning(f"zoom_to_bbox failed, error={err}")
+            logger.warning(
+                f"  zoom_to_bbox SDK FAILED: ret={ok}, error={err}"
+            )
+        else:
+            logger.info(
+                f"  zoom_to_bbox SDK returned OK (last_err={err})"
+            )
         return ok
+
+    def _zoom_via_isapi(self, expanded: Tuple[int, int, int, int],
+                        frame_w: int, frame_h: int) -> bool:
+        """Zoom using ISAPI ptzDrag endpoint."""
+        # Use native resolution for ISAPI if available
+        native_w, native_h = frame_w, frame_h
+        if hasattr(self, '_native_resolution') and self._native_resolution:
+            native_w, native_h = self._native_resolution
+            # Scale bbox from RTSP resolution to native resolution
+            sx = native_w / frame_w
+            sy = native_h / frame_h
+            scaled = (
+                int(expanded[0] * sx), int(expanded[1] * sy),
+                int(expanded[2] * sx), int(expanded[3] * sy),
+            )
+        else:
+            scaled = expanded
+
+        logger.info(
+            f"  zoom_to_bbox[ISAPI]: expanded={expanded}, "
+            f"scaled={scaled}, native={native_w}x{native_h}"
+        )
+        ok = self.isapi.ptz_drag_zoom(
+            scaled[0], scaled[1], scaled[2], scaled[3],
+            native_w, native_h,
+        )
+        self._last_cmd_ts = time.time()
+        return ok
+
+    def query_native_resolution(self) -> Optional[Tuple[int, int]]:
+        """Query and cache native camera resolution via ISAPI."""
+        if self.isapi is None:
+            return None
+        res = self.isapi.get_native_resolution()
+        if res:
+            self._native_resolution = res
+        return res
 
     def _wait_if_needed(self) -> None:
         """Enforce minimum interval between PTZ commands (debounce)."""

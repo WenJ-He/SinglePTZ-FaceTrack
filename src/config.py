@@ -71,6 +71,7 @@ class PtzConfig:
     min_wait_after_zoom: float = 1.0
     motion_th: float = 15.0
     stable_frames: int = 3
+    zoom_backend: str = "sdk"
 
 
 @dataclass
@@ -96,6 +97,7 @@ class CaptureConfig:
 class RecognizeConfig:
     match_th: float = 0.35
     reject_th: float = 0.20
+    min_samples_for_stranger: int = 3
 
 
 @dataclass

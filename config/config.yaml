@@ -51,6 +51,7 @@ ptz:
   min_wait_after_zoom: 1.0
   motion_th:           15.0
   stable_frames:       3
+  zoom_backend:        sdk
 
 capture:
   min_samples: 3
@@ -69,6 +70,7 @@ capture:
 recognize:
   match_th:  0.35
   reject_th: 0.20
+  min_samples_for_stranger: 3
 
 reid:
   cross_preset_th: 0.5

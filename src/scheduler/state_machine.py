@@ -344,6 +344,25 @@ class ScanScheduler:
         if not self._frame_settled(frame) and time.time() < self.settle_deadline:
             return
 
+        # Check if motion was ever detected (zoom_to_bbox may have failed)
+        if self._settle_phase == "WAITING_MOTION" and self._settle_logged:
+            # settle_logged was set by goto_preset in previous cycle, not zoom
+            pass
+        if self._settle_phase == "WAITING_MOTION":
+            # Zoom didn't move the camera — skip focus check, proceed directly
+            logger.warning(
+                "SCAN_SETTLE: no motion detected after zoom, "
+                "zoom_to_bbox may not have taken effect"
+            )
+            self._lap_history.clear()
+            self.capture_buf = []
+            self.capture_deadline = time.time() + self.cfg.capture.timeout
+            self.capture_tracker = None
+            if self.target is not None:
+                self.target_bbox = self.target.bbox
+            self.state = State.SCAN_CAPTURE
+            return
+
         # Step 2: focus quality settled (after motion settled)
         if not self._focus_settled(frame):
             if time.time() < self.settle_deadline:
@@ -406,6 +425,23 @@ class ScanScheduler:
         logger.info(f"SCAN_RECOGNIZE: {len(self.capture_buf)} captures")
 
         if self.capture_buf and self.arcface and self.gallery:
+            # Insufficient samples -> UNRECOGNIZED (not STRANGER)
+            min_samples_for_stranger = getattr(
+                self.cfg.recognize, 'min_samples_for_stranger',
+                self.cfg.capture.min_samples,
+            )
+            if len(self.capture_buf) < min_samples_for_stranger:
+                logger.info(
+                    f"  UNRECOGNIZED: only {len(self.capture_buf)} captures "
+                    f"(need {min_samples_for_stranger} for STRANGER judgment)"
+                )
+                self._log_event_raw("unrecognized", "UNRECOGNIZED", 0.0)
+                self.capture_tracker = None
+                self.target = None
+                self.target_bbox = None
+                self.state = State.SCAN_ZOOM_OUT
+                return
+
             # Embed all captures
             feats = [self.arcface.embed(f) for f in self.capture_buf]
             mean_feat = np.mean(feats, axis=0)
@@ -435,7 +471,7 @@ class ScanScheduler:
             # Log event
             self._log_event(result, name)
 
-            # Add to identified table
+            # Add to identified table (only 'hit')
             self._add_identified(result, name)
         else:
             logger.info("  No captures or recognizer not available")
@@ -474,15 +510,19 @@ class ScanScheduler:
 
     def _log_event(self, result: MatchResult, name: str):
         """Append recognition event to events.jsonl."""
+        self._log_event_raw(result.kind, name, round(result.sim, 4))
+
+    def _log_event_raw(self, kind: str, name: str, sim: float):
+        """Append event with raw values."""
         os.makedirs(os.path.dirname(self.cfg.output.events_jsonl) or ".", exist_ok=True)
         self._event_count += 1
         event = {
             "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "preset": self.current_scan_preset,
             "event_id": self._event_count,
-            "result": result.kind,
+            "result": kind,
             "name": name,
-            "sim": round(result.sim, 4),
+            "sim": sim,
         }
         if self.target_bbox:
             event["bbox"] = list(self.target_bbox)
@@ -534,8 +574,20 @@ class ScanScheduler:
         return best
 
     def _add_identified(self, result: MatchResult, name: str):
-        """Add recognized person to global identified table."""
-        # Get reid_feat from tracker if available
+        """Add recognized person to global identified table.
+
+        Only 'hit' results (confirmed gallery match) are added.
+        STRANGER/AMBIGUOUS are NOT added — a single low-quality misidentification
+        would otherwise pollute the entire scan round, causing all subsequent
+        tracks at other presets to be skipped.
+        """
+        if result.kind != "hit":
+            logger.debug(
+                f"  Not adding '{result.kind}' to identified table "
+                f"(only 'hit' is added)"
+            )
+            return
+
         reid_feat = None
         if self.tracker is not None:
             for track in self.tracker.tracks:
