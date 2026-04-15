@@ -613,7 +613,14 @@ class ScanScheduler:
         """Record PTZ command timestamp and reset settle state machine."""
         self._ptz_cmd_ts = time.time()
         self._ptz_cmd_type = cmd_type
-        self._settle_phase = "WAITING_MOTION"
+        # ISAPI zoom is synchronous — we already know the camera received
+        # the command (HTTP 200). Skip WAITING_MOTION and go straight to
+        # stability checking after the min_wait period.
+        if (cmd_type == "zoom"
+                and getattr(self.ptz, 'zoom_backend', 'sdk') == "isapi"):
+            self._settle_phase = "MOTION_DETECTED"
+        else:
+            self._settle_phase = "WAITING_MOTION"
         self._settle_stable_count = 0
         self._prev_gray = None
         self._flushed_after_wait = False

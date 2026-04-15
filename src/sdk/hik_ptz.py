@@ -217,11 +217,16 @@ class HikPTZ:
         d_az = cx * cur_hfov
         d_el = -cy * cur_vfov  # negative because y-down in image, elevation positive is up
 
-        # Target zoom: fit bbox to ~60% of frame
+        # Target zoom: fit bbox to ~85% of frame.
+        # Person detection bboxes are tall (full body); the expand_ratio=1.5
+        # further enlarges them. With 0.6 fill, expanded bbox can exceed frame
+        # height, yielding barely any zoom. 0.85 ensures meaningful zoom while
+        # leaving safe margins for capture tracking.
+        fill = getattr(self, '_zoom_fill', 0.85)
         bbox_w = expanded[2] - expanded[0]
         bbox_h = expanded[3] - expanded[1]
-        zoom_by_w = (frame_w * 0.6) / max(bbox_w, 1) * cur_zoom
-        zoom_by_h = (frame_h * 0.6) / max(bbox_h, 1) * cur_zoom
+        zoom_by_w = (frame_w * fill) / max(bbox_w, 1) * cur_zoom
+        zoom_by_h = (frame_h * fill) / max(bbox_h, 1) * cur_zoom
         target_zoom = min(zoom_by_w, zoom_by_h, 20.0)  # cap at 20x
 
         target_az = cur_az + d_az

@@ -51,7 +51,7 @@ ptz:
   min_wait_after_zoom: 1.0
   motion_th:           15.0
   stable_frames:       3
-  zoom_backend:        sdk
+  zoom_backend:        isapi
 
 capture:
   min_samples: 3
