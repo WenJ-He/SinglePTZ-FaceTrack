@@ -1,0 +1,25 @@
+stage: "stage1_single_static"
+
+stage1:
+  home_preset: 1
+  loop_sleep_s: 0.03
+  settle_after_move_s: 0.35
+  settle_after_zoom_s: 0.80
+  hold_after_max_zoom_s: 2.0
+  restore_home_settle_s: 2.5
+  person_center_tolerance_ratio_x: 0.08
+  person_center_tolerance_ratio_y: 0.10
+  face_center_tolerance_ratio_x: 0.05
+  face_center_tolerance_ratio_y: 0.07
+  face_zoom_ready_ratio_x: 0.10
+  face_zoom_ready_ratio_y: 0.12
+  face_size_switch_ratio: 0.0
+  face_size_hold_ratio: 0.12
+  lost_timeout_s: 1.0
+  move_speed: 4
+  move_pulse_s: 0.18
+  zoom_speed: 4
+  zoom_pulse_s: 0.45
+  min_zoom_interval_s: 0.30
+  max_zoom_steps: 8
+  debug_draw_all: true

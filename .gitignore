@@ -1,37 +1,45 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-dist/
-build/
-.eggs/
+*.py[cod]
 *.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
 
-# IDE
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Cache & output
-cache/gallery.npz
-output/strangers/
-output/events.jsonl
-logs/*.log
-
-# Model files (too large for GitHub)
-models/facedect/**/*.onnx
-models/facerecognize/*.onnx
-models/person/*.onnx
-models/reid/*.onnx
-
-# SDK large files
-HCNetSDKV6.1.11.5_build20251204_linux64_ZH_20260320152102/
-
 # OS
 .DS_Store
 Thumbs.db
 
-# Conda / venv
-.env
-venv/
+# Local tooling
+/.claude/
+/.codex/
+/.codex.blocked-by-runtime
+/.direnv/
+/.envrc
+
+# Runtime artifacts
+/cache/
+/logs/
+/output/
+
+# Local planning artifacts
+/doc/optimization_tasks*.json
+
+# Model files and SDK bundles
+/yolov8n.pt
+/models/facedect/**/*.onnx
+/models/facerecognize/*.onnx
+/models/person/*.onnx
+/models/reid/*.onnx
+/models/reid/*.onnx.data
+/HCNetSDKV6.1.11.5_build20251204_linux64_ZH_20260320152102/

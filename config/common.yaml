@@ -1,0 +1,32 @@
+hik:
+  ip: "192.168.0.249"
+  port: 8000
+  user: "admin"
+  password: "vision123456"
+  channel: 1
+  rtsp_url: "rtsp://admin:vision123456@192.168.0.249:554/Streaming/Channels/101"
+  sdk_lib_dir: "HCNetSDKV6.1.11.5_build20251204_linux64_ZH_20260320152102/HCNetSDKV6.1.11.5_build20251204_linux64_ZH/库文件"
+
+runtime:
+  prefer_gpu: false
+
+models:
+  person: "models/person/yolov8n.onnx"
+  face: "models/facedect/640/model.onnx"
+
+detect:
+  person_conf: 0.45
+  person_iou: 0.5
+  face_conf: 0.35
+  face_iou: 0.5
+  edge_reject_enabled: true
+  edge_margin: 5
+
+web:
+  host: "0.0.0.0"
+  port: 18060
+  jpeg_quality: 90
+
+log:
+  level: "INFO"
+  file: "logs/app.log"

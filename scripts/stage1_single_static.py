@@ -1,8 +1,5 @@
-"""Refactored main entry point.
-
-The default runtime now enters stage 1 (single-person static) so the project
-can be debugged incrementally instead of booting the old all-in-one scan flow.
-"""
+#!/usr/bin/env python3
+"""Run the refactored stage-1 single-static loop."""
 
 import os
 import sys
