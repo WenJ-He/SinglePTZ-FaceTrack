@@ -79,6 +79,41 @@ class Stage1Config:
 
 
 @dataclass
+class Stage2Config:
+    home_preset: int = 1
+    loop_sleep_s: float = 0.03
+    settle_after_move_s: float = 0.30
+    settle_after_zoom_s: float = 0.80
+    restore_home_settle_s: float = 2.5
+    follow_duration_s: float = 10.0
+    person_center_tolerance_ratio_x: float = 0.08
+    person_center_tolerance_ratio_y: float = 0.10
+    face_center_tolerance_ratio_x: float = 0.05
+    face_center_tolerance_ratio_y: float = 0.07
+    face_zoom_ready_ratio_x: float = 0.10
+    face_zoom_ready_ratio_y: float = 0.12
+    face_size_switch_ratio: float = 0.0
+    body_anchor_ratio: float = 0.30
+    face_predict_lead_s: float = 0.35
+    body_predict_lead_s: float = 0.25
+    lost_face_to_body_s: float = 0.5
+    lost_all_restore_s: float = 1.0
+    desired_face_ratio_min: float = 0.08
+    desired_face_ratio_max: float = 0.16
+    lost_timeout_s: float = 1.2
+    move_speed_min: int = 2
+    move_speed: int = 4
+    move_pulse_min_s: float = 0.05
+    move_pulse_s: float = 0.16
+    move_control_interval_s: float = 0.08
+    zoom_speed: int = 4
+    zoom_pulse_s: float = 0.35
+    min_zoom_interval_s: float = 0.50
+    max_zoom_steps: int = 8
+    debug_draw_all: bool = True
+
+
+@dataclass
 class AppConfig:
     stage: str = "stage1_single_static"
     hik: HikConfig = field(default_factory=HikConfig)
@@ -88,6 +123,7 @@ class AppConfig:
     web: WebConfig = field(default_factory=WebConfig)
     log: LogConfig = field(default_factory=LogConfig)
     stage1: Stage1Config = field(default_factory=Stage1Config)
+    stage2: Stage2Config = field(default_factory=Stage2Config)
 
 
 def _read_yaml(path: str) -> dict[str, Any]:

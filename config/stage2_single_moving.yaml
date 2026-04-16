@@ -1,0 +1,37 @@
+stage: "stage2_single_moving"
+
+runtime:
+  prefer_gpu: true
+
+stage2:
+  home_preset: 1
+  loop_sleep_s: 0.03
+  settle_after_move_s: 0.08
+  settle_after_zoom_s: 0.80
+  restore_home_settle_s: 2.5
+  follow_duration_s: 10.0
+  person_center_tolerance_ratio_x: 0.08
+  person_center_tolerance_ratio_y: 0.10
+  face_center_tolerance_ratio_x: 0.05
+  face_center_tolerance_ratio_y: 0.07
+  face_zoom_ready_ratio_x: 0.10
+  face_zoom_ready_ratio_y: 0.12
+  face_size_switch_ratio: 0.0
+  body_anchor_ratio: 0.30
+  face_predict_lead_s: 0.35
+  body_predict_lead_s: 0.25
+  lost_face_to_body_s: 0.5
+  lost_all_restore_s: 1.0
+  desired_face_ratio_min: 0.055
+  desired_face_ratio_max: 0.10
+  lost_timeout_s: 1.2
+  move_speed_min: 2
+  move_speed: 5
+  move_pulse_min_s: 0.05
+  move_pulse_s: 0.18
+  move_control_interval_s: 0.08
+  zoom_speed: 4
+  zoom_pulse_s: 0.35
+  min_zoom_interval_s: 0.50
+  max_zoom_steps: 6
+  debug_draw_all: true

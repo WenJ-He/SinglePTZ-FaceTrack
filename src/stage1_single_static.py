@@ -105,10 +105,11 @@ class Stage1SingleStaticApp:
             return
         decision_ms = (time.perf_counter() - self._current_timing["loop_perf_start"]) * 1000
         logger.info(
-            "[TIMING] cmd=%s state=%s target=%s person_det_ms=%.1f face_det_ms=%.1f frame_age_ms=%.1f decision_ms=%.1f",
+            "[TIMING] cmd=%s state=%s target=%s action=%s person_det_ms=%.1f face_det_ms=%.1f frame_age_ms=%.1f decision_ms=%.1f",
             command_name,
             self.state.value,
             self._current_timing.get("target_kind", "none"),
+            self.last_action,
             self._current_timing.get("person_det_ms", 0.0),
             self._current_timing.get("face_det_ms", 0.0),
             self._current_timing.get("frame_age_ms", 0.0),

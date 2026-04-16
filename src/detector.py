@@ -29,7 +29,8 @@ class _BaseYoloDetector:
         self.iou = iou
         self.edge_reject_enabled = edge_reject_enabled
         self.edge_margin = edge_margin
-        self.sess = ort.InferenceSession(onnx_path, providers=providers or ["CPUExecutionProvider"])
+        self.providers = providers or ["CPUExecutionProvider"]
+        self.sess = ort.InferenceSession(onnx_path, providers=self.providers)
         self.input_name = self.sess.get_inputs()[0].name
 
     def _letterbox(self, img: np.ndarray):
@@ -59,7 +60,13 @@ class FaceDetector(_BaseYoloDetector):
         edge_margin: int = 5,
     ):
         super().__init__(onnx_path, input_size, conf, iou, providers, edge_reject_enabled, edge_margin)
-        logger.info("FaceDetector loaded: %s size=%s conf=%.2f", onnx_path, input_size, conf)
+        logger.info(
+            "FaceDetector loaded: %s size=%s conf=%.2f providers=%s",
+            onnx_path,
+            input_size,
+            conf,
+            self.sess.get_providers(),
+        )
 
     def detect(self, img_bgr: np.ndarray) -> List[Detection]:
         h, w = img_bgr.shape[:2]
@@ -108,7 +115,13 @@ class PersonDetector(_BaseYoloDetector):
         edge_margin: int = 5,
     ):
         super().__init__(onnx_path, input_size, conf, iou, providers, edge_reject_enabled, edge_margin)
-        logger.info("PersonDetector loaded: %s size=%s conf=%.2f", onnx_path, input_size, conf)
+        logger.info(
+            "PersonDetector loaded: %s size=%s conf=%.2f providers=%s",
+            onnx_path,
+            input_size,
+            conf,
+            self.sess.get_providers(),
+        )
 
     def detect(self, img_bgr: np.ndarray) -> List[Detection]:
         h, w = img_bgr.shape[:2]
