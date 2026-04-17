@@ -4,22 +4,27 @@ runtime:
   prefer_gpu: true
 
 stage3:
-  preset_ids: [1, 2, 3, 4]
+  preset_ids: [1, 2, 3, 4, 3, 2]
   loop_sleep_s: 0.03
-  patrol_settle_s: 2.0
+  patrol_settle_s: 1.0
   observe_hold_s: 2.0
   reset_settle_s: 2.5
   preset_capture_settle_s: 2.0
   tracking_timeout_s: 10.0
+  tracking_lost_grace_s: 1.2
   lost_face_to_body_s: 0.5
   lost_all_reset_s: 1.0
+  face_target_y_ratio: 0.41
+  body_target_y_ratio: 0.44
+  max_upward_tilt_offset_deg: 8.0
+  tilt_up_block_cooldown_s: 0.6
   person_center_tolerance_ratio_x: 0.08
   person_center_tolerance_ratio_y: 0.10
   face_center_tolerance_ratio_x: 0.05
   face_center_tolerance_ratio_y: 0.07
   face_zoom_ready_ratio_x: 0.10
   face_zoom_ready_ratio_y: 0.12
-  body_anchor_ratio: 0.30
+  body_anchor_ratio: 0.45
   face_predict_lead_s: 0.35
   body_predict_lead_s: 0.25
   desired_face_ratio_min: 0.055
@@ -32,7 +37,9 @@ stage3:
   zoom_pulse_s: 0.35
   settle_after_zoom_s: 0.80
   reset_zoom_settle_s: 0.25
+  zoom_ready_consecutive_frames: 3
+  zoom_cooldown_after_tracking_start_s: 1.0
   min_zoom_interval_s: 0.50
   max_zoom_steps: 6
-  reset_zoom_max_steps: 2
+  reset_zoom_max_steps: 4
   debug_draw_all: true

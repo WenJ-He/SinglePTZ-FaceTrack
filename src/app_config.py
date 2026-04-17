@@ -115,22 +115,27 @@ class Stage2Config:
 
 @dataclass
 class Stage3Config:
-    preset_ids: list[int] = field(default_factory=lambda: [1, 2, 3, 4])
+    preset_ids: list[int] = field(default_factory=lambda: [1, 2, 3, 4, 3, 2])
     loop_sleep_s: float = 0.03
     patrol_settle_s: float = 2.0
     observe_hold_s: float = 2.0
     reset_settle_s: float = 2.5
     preset_capture_settle_s: float = 2.0
     tracking_timeout_s: float = 10.0
+    tracking_lost_grace_s: float = 1.2
     lost_face_to_body_s: float = 0.5
     lost_all_reset_s: float = 1.0
+    face_target_y_ratio: float = 0.41
+    body_target_y_ratio: float = 0.44
+    max_upward_tilt_offset_deg: float = 8.0
+    tilt_up_block_cooldown_s: float = 0.6
     person_center_tolerance_ratio_x: float = 0.08
     person_center_tolerance_ratio_y: float = 0.10
     face_center_tolerance_ratio_x: float = 0.05
     face_center_tolerance_ratio_y: float = 0.07
     face_zoom_ready_ratio_x: float = 0.10
     face_zoom_ready_ratio_y: float = 0.12
-    body_anchor_ratio: float = 0.30
+    body_anchor_ratio: float = 0.45
     face_predict_lead_s: float = 0.35
     body_predict_lead_s: float = 0.25
     desired_face_ratio_min: float = 0.055
@@ -143,9 +148,11 @@ class Stage3Config:
     zoom_pulse_s: float = 0.35
     settle_after_zoom_s: float = 0.80
     reset_zoom_settle_s: float = 0.25
+    zoom_ready_consecutive_frames: int = 3
+    zoom_cooldown_after_tracking_start_s: float = 1.0
     min_zoom_interval_s: float = 0.50
     max_zoom_steps: int = 6
-    reset_zoom_max_steps: int = 2
+    reset_zoom_max_steps: int = 4
     debug_draw_all: bool = True
 
 

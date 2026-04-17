@@ -56,12 +56,16 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
         self.last_body_seen_ts = 0.0
 
         self.track_until = 0.0
+        self.track_started_wall_ts = 0.0
+        self.track_lost_since = 0.0
         self.observe_until = 0.0
         self.current_preset_idx = -1
         self.next_preset_idx = 0
         self.preset_coords: dict[int, PtzCoord] = {}
         self.ptz_scope: PtzScope | None = None
         self.last_known_ptz: PtzCoord | None = None
+        self.face_zoom_ready_count = 0
+        self.tilt_up_blocked_until = 0.0
 
         self.client = None
 
@@ -91,6 +95,10 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
         self.last_face_seen_ts = 0.0
         self.last_body_seen_ts = 0.0
         self.track_until = 0.0
+        self.track_started_wall_ts = 0.0
+        self.track_lost_since = 0.0
+        self.face_zoom_ready_count = 0
+        self.tilt_up_blocked_until = 0.0
         self.zoom_steps = 0
         self.last_zoom_ts = 0.0
         self.settling_until = 0.0
@@ -158,6 +166,9 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
             return
         preset_id = self._current_preset_id()
         self.track_until = time.time() + self.cfg.stage3.tracking_timeout_s
+        self.track_started_wall_ts = time.time()
+        self.track_lost_since = 0.0
+        self.face_zoom_ready_count = 0
         self._set_state(Stage3State.TRACKING, "face_found")
         self._mark_engagement_start(frame_age_ms)
         logger.info(
@@ -211,10 +222,22 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
     def _target_error(self, kind: str, bbox, frame_shape):
         frame_h, frame_w = frame_shape[:2]
         px, py = self._predict_point(kind, bbox)
+        target_y_ratio = self.cfg.stage3.face_target_y_ratio if kind == "face" else self.cfg.stage3.body_target_y_ratio
         dx = (px - frame_w / 2.0) / max(frame_w, 1)
-        dy = (py - frame_h / 2.0) / max(frame_h, 1)
+        dy = (py - frame_h * target_y_ratio) / max(frame_h, 1)
         width_ratio = (bbox[2] - bbox[0]) / max(frame_w, 1)
         return dx, dy, width_ratio
+
+    def _upward_limit_reached(self) -> bool:
+        if self.ptz_scope is None:
+            return False
+        preset_id = self._current_preset_id()
+        if preset_id is None or preset_id not in self.preset_coords:
+            return False
+        current, _ = get_ptz_coord(self.client, self.cfg.hik.channel)
+        self.last_known_ptz = current
+        preset_coord = self.preset_coords[preset_id]
+        return current.tilt <= (preset_coord.tilt - self.cfg.stage3.max_upward_tilt_offset_deg)
 
     def _current_tolerances(self, target_kind: str):
         if target_kind == "face":
@@ -240,6 +263,7 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
     def _nudge_towards(self, dx: float, dy: float, target_kind: str):
         command_name = None
         tol_x, tol_y = self._current_tolerances(target_kind)
+        now_wall = time.time()
 
         if abs(dx) >= abs(dy) and abs(dx) > tol_x:
             speed, pulse_s = self._adaptive_move_params(abs(dx), tol_x)
@@ -252,9 +276,47 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
         elif abs(dy) > tol_y:
             speed, pulse_s = self._adaptive_move_params(abs(dy), tol_y)
             if dy < 0:
-                self.ptz.tilt_up_async(pulse_s, speed)
-                command_name = "tilt_up"
+                if now_wall < self.tilt_up_blocked_until:
+                    if abs(dx) > tol_x:
+                        speed, pulse_s = self._adaptive_move_params(abs(dx), tol_x)
+                        if dx < 0:
+                            self.ptz.pan_left_async(pulse_s, speed)
+                            command_name = "pan_left"
+                        else:
+                            self.ptz.pan_right_async(pulse_s, speed)
+                            command_name = "pan_right"
+                    else:
+                        self.ptz.stop()
+                        self.last_action = "tilt_up_blocked(cooldown)"
+                        self.settling_until = now_wall
+                        return
+                elif self._upward_limit_reached():
+                    self.tilt_up_blocked_until = now_wall + self.cfg.stage3.tilt_up_block_cooldown_s
+                    self.ptz.stop()
+                    self.last_action = "tilt_up_blocked(limit)"
+                    self.settling_until = now_wall
+                    logger.info(
+                        "[TIMING] tilt_up_blocked preset=%s limit_deg=%.1f cooldown_s=%.1f",
+                        self._current_preset_id(),
+                        self.cfg.stage3.max_upward_tilt_offset_deg,
+                        self.cfg.stage3.tilt_up_block_cooldown_s,
+                    )
+                    if abs(dx) > tol_x:
+                        speed, pulse_s = self._adaptive_move_params(abs(dx), tol_x)
+                        if dx < 0:
+                            self.ptz.pan_left_async(pulse_s, speed)
+                            command_name = "pan_left"
+                        else:
+                            self.ptz.pan_right_async(pulse_s, speed)
+                            command_name = "pan_right"
+                    else:
+                        return
+                else:
+                    self.tilt_up_blocked_until = 0.0
+                    self.ptz.tilt_up_async(pulse_s, speed)
+                    command_name = "tilt_up"
             else:
+                self.tilt_up_blocked_until = 0.0
                 self.ptz.tilt_down_async(pulse_s, speed)
                 command_name = "tilt_down"
         else:
@@ -284,19 +346,32 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
 
     def _zoom_out_before_reset(self):
         if self.ptz_scope is None:
-            return
+            return 0, None, None
+        before, _ = get_ptz_coord(self.client, self.cfg.hik.channel)
+        steps = 0
         for _ in range(self.cfg.stage3.reset_zoom_max_steps):
             current, _ = get_ptz_coord(self.client, self.cfg.hik.channel)
             self.last_known_ptz = current
             if current.zoom <= self.ptz_scope.zoom_min + 0.05:
-                return
+                return steps, before, current
             self.ptz.zoom_out(self.cfg.stage3.zoom_pulse_s, self.cfg.stage3.zoom_speed)
+            steps += 1
             time.sleep(self.cfg.stage3.reset_zoom_settle_s)
+        final, _ = get_ptz_coord(self.client, self.cfg.hik.channel)
+        self.last_known_ptz = final
+        return steps, before, final
 
     def _begin_resetting(self, reason: str):
         self.ptz.stop()
         try:
-            self._zoom_out_before_reset()
+            zoom_steps, zoom_before, zoom_after = self._zoom_out_before_reset()
+            if zoom_before is not None and zoom_after is not None:
+                logger.info(
+                    "[TIMING] reset_zoom_out steps=%d zoom_before=%.1f zoom_after=%.1f",
+                    zoom_steps,
+                    zoom_before.zoom,
+                    zoom_after.zoom,
+                )
         except Exception as exc:
             logger.warning("reset zoom-out failed: %s", exc)
 
@@ -329,11 +404,20 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
         target_body_valid = tracked_person is not None and self._recent_body(now_wall)
 
         if not target_face_valid and not target_body_valid:
-            if now_wall < self.settling_until:
-                self.last_action = "settling_wait_target"
+            if self.track_lost_since <= 0.0:
+                self.track_lost_since = now_wall
+                logger.info(
+                    "[TIMING] tracking_reacquire_start grace_s=%.1f",
+                    self.cfg.stage3.tracking_lost_grace_s,
+                )
+            grace_until = self.track_lost_since + self.cfg.stage3.tracking_lost_grace_s
+            if now_wall < max(self.settling_until, grace_until):
+                self.ptz.stop()
+                self.last_action = "tracking_reacquire_wait"
                 return "none", None, 0.0, 0.0, 0.0
             self._begin_resetting("lost_target")
             return "none", None, 0.0, 0.0, 0.0
+        self.track_lost_since = 0.0
 
         if target_face_valid:
             target_kind = "face"
@@ -341,6 +425,7 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
         else:
             target_kind = "body"
             target_bbox = tracked_person.bbox
+            self.face_zoom_ready_count = 0
 
         dx, dy, width_ratio = self._target_error(target_kind, target_bbox, frame_shape)
         self._current_timing["target_kind"] = target_kind
@@ -353,16 +438,32 @@ class Stage3PresetPatrolApp(Stage1SingleStaticApp):
                 abs(dx) <= self.cfg.stage3.face_zoom_ready_ratio_x
                 and abs(dy) <= self.cfg.stage3.face_zoom_ready_ratio_y
             )
+            if centered:
+                self.face_zoom_ready_count += 1
+            else:
+                self.face_zoom_ready_count = 0
+
             if centered and not self._face_zoom_complete(width_ratio):
-                if self.zoom_steps < self.cfg.stage3.max_zoom_steps and (time.time() - self.last_zoom_ts) >= self.cfg.stage3.min_zoom_interval_s:
+                can_zoom = (
+                    self.zoom_steps < self.cfg.stage3.max_zoom_steps
+                    and self.face_zoom_ready_count >= self.cfg.stage3.zoom_ready_consecutive_frames
+                    and (time.time() - self.last_zoom_ts) >= self.cfg.stage3.min_zoom_interval_s
+                    and (now_wall - self.track_started_wall_ts) >= self.cfg.stage3.zoom_cooldown_after_tracking_start_s
+                )
+                if can_zoom:
                     logger.info(
-                        "[TIMING] zoom_ready target=%s dx=%.3f dy=%.3f ratio=%.3f",
+                        "[TIMING] zoom_ready target=%s dx=%.3f dy=%.3f ratio=%.3f ready_frames=%d",
                         target_kind,
                         dx,
                         dy,
                         width_ratio,
+                        self.face_zoom_ready_count,
                     )
                     self._zoom_step()
+                    self.face_zoom_ready_count = 0
+                else:
+                    self.ptz.stop()
+                    self.last_action = self.ptz.last_action
             elif abs(dx) > self.cfg.stage3.face_center_tolerance_ratio_x or abs(dy) > self.cfg.stage3.face_center_tolerance_ratio_y:
                 self._nudge_towards(dx, dy, "face")
             else:
